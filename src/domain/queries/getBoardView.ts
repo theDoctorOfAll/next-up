@@ -1,6 +1,5 @@
 import { getBoard } from "../../database/repositories/boardRepository";
 import { getGameById } from "../../database/repositories/gameRepository";
-import { db } from "../../database/db"
 
 export interface BoardView {
 
@@ -31,8 +30,6 @@ export async function getBoardView(): Promise<BoardView> {
             ? await getGameById(board.reserveGameId)
             : undefined;
 
-    console.log("games:", await db.games.toArray());
-    console.log("game:", board.dailyGameId);
     return {
 
         dailyTitle: daily?.title ?? "—",

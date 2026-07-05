@@ -56,6 +56,7 @@ class NextUpDB extends Dexie {
   events!: Table<Event, number>;
   points!: Table<PointTransaction, number>;
   board!: Table<BoardState, number>;
+  metadata!: Table<MetadataEntry, string>;
 
   constructor() {
     super("nextup");
@@ -65,6 +66,14 @@ class NextUpDB extends Dexie {
       events: "++id, type, timestamp",
       points: "++id, timestamp",
       board: "id"
+    });
+
+    this.version(3).stores({
+      games: "++id, title, pool, reserved",
+      events: "++id, type, timestamp",
+      points: "++id, timestamp",
+      board: "id",
+      metadata: "key"
     });
   }
 }
@@ -83,4 +92,11 @@ export interface BoardState {
   dailyPlayed: boolean;
   weeklyPlayed: boolean;
 }
+
+export interface MetadataEntry {
+  key: string;
+  value: unknown;
+  updatedAt: number;
+}
+
 export const db = new NextUpDB();

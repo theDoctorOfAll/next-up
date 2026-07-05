@@ -1,31 +1,51 @@
-import { db } from "../../database/db";
 import { weightedPick } from "../../services/rng";
-import { addEvent, addPoints } from "../../database/services";
-import { getBoard, saveBoard } from "../../database/repositories/boardRepository";
 import { now } from "../../core/clock";
+import { getEligibleGames } from "../services/GameLibraryService";
+import {
+  getCurrentBoard,
+  updateWeeklyGame
+} from "../services/BoardService";
+import {
+  applyRollCost,
+  evaluateRollRules
+} from "../rules/rulesEngine";
+import { addEvent } from "../../database/services";
+import type { Game } from "../../database/db";
+import type { UseCaseResult } from "../useCaseResult";
 
-export async function rollWeeklyGame() {
-  const games = await db.games
-    .filter(g => g.pool === "weekly" && !g.reserved)
-    .toArray();
+export async function rollWeeklyGame(): Promise<UseCaseResult<Game>> {
+  const timestamp = now();
+  const board = await getCurrentBoard();
+  const rules = await evaluateRollRules(board, "weekly", timestamp);
+
+  if (!rules.allowed) {
+    return {
+      success: false,
+      message: rules.reason ?? "Weekly roll is not allowed."
+    };
+  }
+
+  const games = await getEligibleGames("weekly");
 
   const picked = weightedPick(games);
+
   if (!picked) return {
     success: false,
     message: "No eligible games."
   };
 
-  await addEvent("ROLL_WEEKLY", { gameId: picked.id });
+  if (!picked.id) {
+    throw new Error("Invalid game selected: missing id");
+  }
 
-  await addPoints(20, "Weekly roll reward");
+  await applyRollCost("weekly", rules.cost, picked.id);
 
-  const board = await getBoard();
-
-  board.weeklyGameId = picked.id;
-  board.weeklyRolledAt = now();
-  board.weeklyPlayed = false;
-
-  await saveBoard(board);
+  await updateWeeklyGame(picked.id);
+  await addEvent("ROLL_WEEKLY", {
+    gameId: picked.id,
+    cost: rules.cost,
+    timestamp
+  });
 
   return {
     success: true,

@@ -1,5 +1,6 @@
 import { db, type Game, type Event, type PointTransaction, type EventType } from "./db";
 import { now } from "../core/clock";
+import { addGameToLibrary } from "../domain/services/GameLibraryService";
 
 /**
  * EVENT WRITER
@@ -40,18 +41,7 @@ export async function getPointTotal(): Promise<number> {
  * GAME CRUD
  */
 export async function createGame(title: string, pool: "daily" | "weekly") {
-  const id = await db.games.add({
-    title,
-    pool,
-    weight: 1,
-    reserved: false,
-    createdAt: now(),
-    updatedAt: now()
-  });
-
-  await addEvent("GAME_CREATED", { id, title, pool });
-
-  return id;
+  return addGameToLibrary(title, pool);
 }
 
 export async function updateGame(game: Game) {

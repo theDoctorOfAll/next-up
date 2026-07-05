@@ -1,26 +1,24 @@
-import { addGameToLibrary } from "../domain/useCases/addGameToLibrary";
+import {
+  addGameToLibrary,
+  markInitialLibrarySeeded
+} from "../domain/services/GameLibraryService";
 
-export async function seedGames() {
-  const existing = [
-    "Hades",
-    "Stardew Valley",
-    "Slay the Spire",
-    "Forza Horizon 5",
-    "Final Fantasy VII Remake",
-    "Star Wars Outlaws"
-  ];
+let seeded = false;
 
-  for (const title of existing) {
-    await addGameToLibrary(title, "daily");
+export async function seedGamesOnce() {
+  if (seeded) {
+    return;
   }
 
-  const weekly = [
-    "Stardew Valley",
-    "Final Fantasy VII Remake",
-    "Star Wars Outlaws"
-  ];
+  seeded = true;
 
-  for (const title of weekly) {
-    await addGameToLibrary(title, "weekly");
-  }
+  await addGameToLibrary("Hades", "daily");
+  await addGameToLibrary("Slay the Spire", "daily");
+  await addGameToLibrary("Forza Horizon 5", "daily");
+
+  await addGameToLibrary("Stardew Valley", "weekly");
+  await addGameToLibrary("Final Fantasy VII Remake", "weekly");
+  await addGameToLibrary("Star Wars Outlaws", "weekly");
+
+  await markInitialLibrarySeeded();
 }

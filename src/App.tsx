@@ -1,6 +1,6 @@
 import { Routes, Route, Link } from "react-router-dom";
 import Board from "./pages/Board";
-import { useDBTest } from "./hooks/useDBTest";
+import { useAppInitialization } from "./hooks/useAppInitialization";
 
 function Placeholder({ title }: { title: string }) {
   return (
@@ -12,7 +12,30 @@ function Placeholder({ title }: { title: string }) {
 }
 
 export default function App() {
-  useDBTest();
+  const { initialized, error } = useAppInitialization();
+
+  if (error) {
+    return (
+      <div className="min-h-screen bg-bg text-white p-6">
+        <div className="bg-panel p-6 rounded-xl">
+          <h1 className="text-xl font-bold text-accent">Next Up</h1>
+          <p className="mt-2 opacity-80">Game library initialization failed.</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (!initialized) {
+    return (
+      <div className="min-h-screen bg-bg text-white p-6">
+        <div className="bg-panel p-6 rounded-xl">
+          <h1 className="text-xl font-bold text-accent">Next Up</h1>
+          <p className="mt-2 opacity-80">Preparing your game library...</p>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen flex bg-bg text-white">
       <aside className="w-56 bg-panel p-4 space-y-4">

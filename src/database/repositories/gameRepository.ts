@@ -19,9 +19,11 @@ export async function updateGame(game: Game): Promise<void> {
     if (!game.id)
         throw new Error("Game has no id.");
 
-    game.updatedAt = Date.now();
-
     await db.games.put(game);
+}
+
+export async function deleteGame(id: number): Promise<void> {
+    await db.games.delete(id);
 }
 
 export async function getGame(id: number): Promise<Game | undefined> {
