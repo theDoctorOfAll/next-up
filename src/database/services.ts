@@ -1,6 +1,7 @@
 import { db, type Game, type Event, type PointTransaction, type EventType } from "./db.ts";
 import { now } from "../core/clock.ts";
 import { addGameToLibrary } from "../domain/services/GameLibraryService.ts";
+import { getBoard, saveBoard } from "./repositories/boardRepository";
 
 /**
  * EVENT WRITER
@@ -56,5 +57,31 @@ export async function updateGame(game: Game) {
 }
 
 export async function clearEventHistory() {
-  return db.events.clear();
+  const board = await getBoard();
+
+  if (board.reserveGameId) {
+    const reserveGame = await db.games.get(board.reserveGameId);
+
+    if (reserveGame) {
+      await db.games.update(board.reserveGameId, {
+        ...reserveGame,
+        reserved: false,
+        updatedAt: now()
+      });
+    }
+  }
+
+  board.dailyGameId = undefined;
+  board.weeklyGameId = undefined;
+  board.reserveGameId = undefined;
+  board.dailyRolledAt = undefined;
+  board.weeklyRolledAt = undefined;
+  board.dailyPlayed = false;
+  board.weeklyPlayed = false;
+
+  await Promise.all([
+    db.events.clear(),
+    db.points.clear(),
+    saveBoard(board)
+  ]);
 }

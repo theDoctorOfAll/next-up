@@ -1,6 +1,9 @@
 import { Routes, Route, Link } from "react-router-dom";
 import Board from "./pages/Board";
 import Library from "./pages/Library";
+import Events from "./pages/Events";
+import Stats from "./pages/Stats";
+import Settings from "./pages/Settings";
 import { useAppInitialization } from "./hooks/useAppInitialization";
 
 function Placeholder({ title }: { title: string }) {
@@ -55,9 +58,9 @@ export default function App() {
         <Routes>
           <Route path="/" element={<Board />} />
           <Route path="/library" element={<Library />} />
-          <Route path="/events" element={<Placeholder title="Event Log" />} />
-          <Route path="/stats" element={<Placeholder title="Statistics" />} />
-          <Route path="/settings" element={<Placeholder title="Settings" />} />
+          <Route path="/events" element={<Events />} />
+          <Route path="/stats" element={<Stats />} />
+          <Route path="/settings" element={<Settings />} />
         </Routes>
       </main>
     </div>

@@ -5,27 +5,64 @@ import { rollWeeklyGame } from "../domain/useCases/rollWeeklyGame";
 import { recordDailyPlay } from "../domain/useCases/recordDailyPlay";
 import { recordWeeklyPlay } from "../domain/useCases/recordWeeklyPlay";
 import { getBoardView, type BoardView } from "../domain/queries/getBoardView";
-import { addGameToLibrary } from "../domain/services/GameLibraryService";
-import { clearEventHistory } from "../database/services";
+import { addGameToLibrary, parsePlatformsInput } from "../domain/services/GameLibraryService";
+import { clearReserveGame, setReserveGame } from "../domain/services/BoardService";
 import { getPointBalance } from "../database/repositories/pointRepository";
-import type { GamePool } from "../database/db";
+import { getAllGames } from "../database/repositories/gameRepository";
+import type { Game, GamePool } from "../database/db";
+
+const EMPTY_SLOT = "—";
+const BASE_PLAY_REWARD = 15;
+const PLAYTIME_REWARD_PER_30_MINUTES = 10;
+
+function normalizePlaytimeBlocks(value: number) {
+  if (!Number.isFinite(value)) {
+    return 0;
+  }
+
+  return Math.max(0, Math.floor(value));
+}
+
+function getPlaytimeBonus(playtimeBlocks: number) {
+  return normalizePlaytimeBlocks(playtimeBlocks) * PLAYTIME_REWARD_PER_30_MINUTES;
+}
+
+function hasSelectedGame(title: string | undefined) {
+  return Boolean(title && title !== EMPTY_SLOT);
+}
 
 export default function Board() {
   const [view, setView] = useState<BoardView | null>(null);
   const [balance, setBalance] = useState(0);
   const [title, setTitle] = useState("");
   const [pool, setPool] = useState<GamePool>("daily");
+  const [platformsInput, setPlatformsInput] = useState("");
+  const [dailyPlaytimeBlocks, setDailyPlaytimeBlocks] = useState(0);
+  const [weeklyPlaytimeBlocks, setWeeklyPlaytimeBlocks] = useState(0);
+  const [libraryGames, setLibraryGames] = useState<Game[]>([]);
+  const [reserveSelection, setReserveSelection] = useState("");
   const [message, setMessage] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
   const [isRecordingDaily, setIsRecordingDaily] = useState(false);
   const [isRecordingWeekly, setIsRecordingWeekly] = useState(false);
+  const [isUpdatingReserve, setIsUpdatingReserve] = useState(false);
   const [isFlyoutOpen, setIsFlyoutOpen] = useState(false);
 
   async function refreshBoard() {
-    const [nextView, nextBalance] = await Promise.all([getBoardView(), getPointBalance()]);
+    const [nextView, nextBalance, nextGames] = await Promise.all([
+      getBoardView(),
+      getPointBalance(),
+      getAllGames()
+    ]);
 
     setView(nextView);
     setBalance(nextBalance);
+    setLibraryGames(nextGames);
+    setReserveSelection(
+      nextView.reserveTitle === EMPTY_SLOT
+        ? ""
+        : nextGames.find((game) => game.title === nextView.reserveTitle)?.id?.toString() ?? ""
+    );
   }
 
   useEffect(() => {
@@ -36,7 +73,7 @@ export default function Board() {
     const result = await rollDailyGame();
 
     if (!result.success) {
-      alert(result.message);
+      setMessage(result.message ?? "Daily roll could not be completed.");
       return;
     }
 
@@ -47,7 +84,7 @@ export default function Board() {
     const result = await rollWeeklyGame();
 
     if (!result.success) {
-      alert(result.message);
+      setMessage(result.message ?? "Weekly roll could not be completed.");
       return;
     }
 
@@ -59,14 +96,15 @@ export default function Board() {
     setIsRecordingDaily(true);
 
     try {
-      const result = await recordDailyPlay();
+      const result = await recordDailyPlay(normalizePlaytimeBlocks(dailyPlaytimeBlocks));
 
       if (!result.success) {
-        alert(result.message);
+        setMessage(result.message ?? "Daily play could not be recorded.");
         return;
       }
 
-      setMessage(`Recorded play for ${result.data.title}.`);
+      setDailyPlaytimeBlocks(0);
+      setMessage(`Recorded play for ${result.data.title}: +${result.data.reward} points.`);
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Could not record the daily play.");
     } finally {
@@ -80,14 +118,15 @@ export default function Board() {
     setIsRecordingWeekly(true);
 
     try {
-      const result = await recordWeeklyPlay();
+      const result = await recordWeeklyPlay(normalizePlaytimeBlocks(weeklyPlaytimeBlocks));
 
       if (!result.success) {
-        alert(result.message);
+        setMessage(result.message ?? "Weekly play could not be recorded.");
         return;
       }
 
-      setMessage(`Recorded play for ${result.data.title}.`);
+      setWeeklyPlaytimeBlocks(0);
+      setMessage(`Recorded play for ${result.data.title}: +${result.data.reward} points.`);
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Could not record the weekly play.");
     } finally {
@@ -96,18 +135,41 @@ export default function Board() {
     }
   }
 
-  async function handleResetEventHistory() {
-    if (!window.confirm("Reset event history? This cannot be undone.")) {
+  async function handleSetReserve() {
+    const selectedGameId = Number(reserveSelection);
+
+    if (!selectedGameId) {
+      setMessage("Choose a game to place in the reserve slot.");
       return;
     }
 
     setMessage(null);
+    setIsUpdatingReserve(true);
 
     try {
-      await clearEventHistory();
-      setMessage("Event history reset.");
+      await setReserveGame(selectedGameId);
+      await refreshBoard();
+      const selectedGame = libraryGames.find((game) => game.id === selectedGameId);
+      setMessage(`${selectedGame?.title ?? "Selected game"} is now your reserve slot.`);
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : "Could not reset event history.");
+      setMessage(error instanceof Error ? error.message : "Could not update the reserve slot.");
+    } finally {
+      setIsUpdatingReserve(false);
+    }
+  }
+
+  async function handleClearReserve() {
+    setMessage(null);
+    setIsUpdatingReserve(true);
+
+    try {
+      await clearReserveGame();
+      await refreshBoard();
+      setMessage("Reserve slot cleared.");
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Could not clear the reserve slot.");
+    } finally {
+      setIsUpdatingReserve(false);
     }
   }
 
@@ -117,9 +179,10 @@ export default function Board() {
     setIsSaving(true);
 
     try {
-      await addGameToLibrary(title, pool);
+      await addGameToLibrary(title, pool, parsePlatformsInput(platformsInput));
       const addedTitle = title.trim();
       setTitle("");
+      setPlatformsInput("");
       setMessage(`Added "${addedTitle}" to the ${pool} pool.`);
       setIsFlyoutOpen(false);
       await refreshBoard();
@@ -155,13 +218,6 @@ export default function Board() {
             >
               View full library
             </Link>
-            <button
-              type="button"
-              onClick={handleResetEventHistory}
-              className="rounded-full border border-white/10 bg-slate-900/80 px-4 py-2 text-sm font-semibold text-slate-200 transition hover:border-accent/40 hover:bg-white/10"
-            >
-              Reset event history
-            </button>
           </div>
         </div>
       </div>
@@ -184,51 +240,144 @@ export default function Board() {
         </div>
       </div>
 
-      <div className="grid gap-5 md:grid-cols-2">
+      <div 
+        className="grid gap-5 md:grid-cols-2"
+        style={{ gridTemplateColumns: "repeat(2, minmax(0, 1fr))" }}
+      >
         <div className="rounded-[32px] border border-white/10 bg-slate-950/80 p-6 shadow-[0_30px_80px_-40px_rgba(0,0,0,0.75)]">
           <h2 className="text-xl font-semibold">Daily Game</h2>
-          <p className="mt-4 text-2xl font-semibold text-white">{view?.dailyTitle ?? "—"}</p>
+          <p className="mt-4 text-2xl font-semibold text-white">{view?.dailyTitle ?? EMPTY_SLOT}</p>
           <p className="mt-3 max-w-sm text-sm text-slate-400">
-            {view?.dailyPlayed ? "Already marked played" : "Play today to earn points and keep progress moving."}
+            {view?.dailyPlayed
+              ? "Already marked played"
+              : hasSelectedGame(view?.dailyTitle)
+                ? "Play today to earn points and keep progress moving."
+                : "Roll to choose today\'s game."}
           </p>
-          <div className="mt-6 flex flex-wrap gap-3">
-            <button
-              onClick={handleDailyRoll}
-              disabled={view?.dailyPlayed || view?.dailyTitle === "—"}
-              className="rounded-full bg-accent px-5 py-3 text-sm font-semibold text-black transition disabled:cursor-not-allowed disabled:bg-white/10 disabled:text-slate-400"
-            >
-              Roll
-            </button>
-            <button
-              onClick={handleRecordDailyPlay}
-              disabled={isRecordingDaily || view?.dailyPlayed || view?.dailyTitle === "—"}
-              className="rounded-full bg-white/10 px-5 py-3 text-sm font-semibold text-white transition disabled:cursor-not-allowed disabled:bg-white/5 disabled:text-slate-500"
-            >
-              {isRecordingDaily ? "Recording..." : view?.dailyPlayed ? "Played" : "Mark played"}
-            </button>
+          <div className="mt-6 space-y-3">
+            <label className="flex items-center gap-2 text-sm text-slate-400">
+              <span>Playtime (30-min blocks)</span>
+              <input
+                type="number"
+                min="0"
+                step="1"
+                value={dailyPlaytimeBlocks}
+                onChange={(event) => setDailyPlaytimeBlocks(normalizePlaytimeBlocks(Number(event.target.value)))}
+                className="w-24 rounded-full border border-white/10 bg-white/5 px-3 py-2 text-sm text-white outline-none transition focus:border-accent focus:bg-white/10"
+              />
+            </label>
+            <p className="text-xs text-slate-500">
+              Scores +{BASE_PLAY_REWARD + getPlaytimeBonus(dailyPlaytimeBlocks)} points: +{BASE_PLAY_REWARD} daily play, +{getPlaytimeBonus(dailyPlaytimeBlocks)} playtime.
+            </p>
+            <div className="flex flex-wrap gap-3">
+              <button
+                onClick={handleDailyRoll}
+                disabled={view?.dailyPlayed}
+                className="rounded-full bg-accent px-5 py-3 text-sm font-semibold text-black transition disabled:cursor-not-allowed disabled:bg-white/10 disabled:text-slate-400"
+              >
+                Roll
+              </button>
+              <button
+                onClick={handleRecordDailyPlay}
+                disabled={isRecordingDaily || view?.dailyPlayed || !hasSelectedGame(view?.dailyTitle)}
+                className="rounded-full bg-white/10 px-5 py-3 text-sm font-semibold text-white transition disabled:cursor-not-allowed disabled:bg-white/5 disabled:text-slate-500"
+              >
+                {isRecordingDaily ? "Recording..." : view?.dailyPlayed ? "Played" : "Mark played"}
+              </button>
+            </div>
           </div>
         </div>
 
         <div className="rounded-[32px] border border-white/10 bg-slate-950/80 p-6 shadow-[0_30px_80px_-40px_rgba(0,0,0,0.75)]">
           <h2 className="text-xl font-semibold">Weekly Game</h2>
-          <p className="mt-4 text-2xl font-semibold text-white">{view?.weeklyTitle ?? "—"}</p>
+          <p className="mt-4 text-2xl font-semibold text-white">{view?.weeklyTitle ?? EMPTY_SLOT}</p>
           <p className="mt-3 max-w-sm text-sm text-slate-400">
-            {view?.weeklyPlayed ? "Already marked played" : "Play this week to earn reward points."}
+            {view?.weeklyPlayed
+              ? "Already marked played"
+              : hasSelectedGame(view?.weeklyTitle)
+                ? "Play this week to earn reward points."
+                : "Roll to choose this week\'s game."}
           </p>
-          <div className="mt-6 flex flex-wrap gap-3">
+          <div className="mt-6 space-y-3">
+            <label className="flex items-center gap-2 text-sm text-slate-400">
+              <span>Playtime (30-min blocks)</span>
+              <input
+                type="number"
+                min="0"
+                step="1"
+                value={weeklyPlaytimeBlocks}
+                onChange={(event) => setWeeklyPlaytimeBlocks(normalizePlaytimeBlocks(Number(event.target.value)))}
+                className="w-24 rounded-full border border-white/10 bg-white/5 px-3 py-2 text-sm text-white outline-none transition focus:border-accent focus:bg-white/10"
+              />
+            </label>
+            <p className="text-xs text-slate-500">
+              Scores at least +{BASE_PLAY_REWARD + getPlaytimeBonus(weeklyPlaytimeBlocks)} points: +{BASE_PLAY_REWARD} weekly play, +{getPlaytimeBonus(weeklyPlaytimeBlocks)} playtime, plus progression bonus when eligible.
+            </p>
+            <div className="flex flex-wrap gap-3">
+              <button
+                onClick={handleWeeklyRoll}
+                disabled={view?.weeklyPlayed}
+                className="rounded-full bg-accent px-5 py-3 text-sm font-semibold text-black transition disabled:cursor-not-allowed disabled:bg-white/10 disabled:text-slate-400"
+              >
+                Roll
+              </button>
+              <button
+                onClick={handleRecordWeeklyPlay}
+                disabled={isRecordingWeekly || view?.weeklyPlayed || !hasSelectedGame(view?.weeklyTitle)}
+                className="rounded-full bg-white/10 px-5 py-3 text-sm font-semibold text-white transition disabled:cursor-not-allowed disabled:bg-white/5 disabled:text-slate-500"
+              >
+                {isRecordingWeekly ? "Recording..." : view?.weeklyPlayed ? "Played" : "Mark played"}
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div className="rounded-[32px] border border-white/10 bg-slate-950/80 p-6 shadow-[0_30px_80px_-40px_rgba(0,0,0,0.75)]">
+        <div className="flex flex-wrap items-center justify-between gap-4">
+          <div>
+            <h2 className="text-xl font-semibold">Reserve slot</h2>
+            <p className="mt-2 max-w-xl text-sm text-slate-400">
+              Keep a backup game on hand. Reserved titles stay out of daily and weekly rolls until you clear the slot.
+            </p>
+          </div>
+        </div>
+
+        <div className="mt-5 rounded-3xl border border-accent/20 bg-white/5 p-4">
+          <p className="text-sm uppercase tracking-wide text-slate-400">Current reserve</p>
+          <p className="mt-2 text-2xl font-semibold text-white">{view?.reserveTitle ?? EMPTY_SLOT}</p>
+        </div>
+
+        <div className="mt-5 flex flex-col gap-3 sm:flex-row sm:items-center">
+          <select
+            value={reserveSelection}
+            onChange={(event) => setReserveSelection(event.target.value)}
+            className="flex-1 rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-white outline-none transition focus:border-accent focus:bg-white/10"
+          >
+            <option value="">Choose a game</option>
+            {libraryGames.map((game) => (
+              <option key={game.id ?? game.title} value={game.id ?? ""}>
+                {game.title} ({game.pool})
+              </option>
+            ))}
+          </select>
+
+          <div className="flex flex-wrap gap-3">
             <button
-              onClick={handleWeeklyRoll}
-              disabled={view?.weeklyPlayed || view?.weeklyTitle === "—"}
-              className="rounded-full bg-accent px-5 py-3 text-sm font-semibold text-black transition disabled:cursor-not-allowed disabled:bg-white/10 disabled:text-slate-400"
+              type="button"
+              onClick={handleSetReserve}
+              disabled={isUpdatingReserve || !reserveSelection}
+              className="rounded-full bg-accent px-5 py-3 text-sm font-semibold text-black transition disabled:cursor-not-allowed disabled:opacity-60"
             >
-              Roll
+              {isUpdatingReserve ? "Saving..." : "Set reserve"}
             </button>
             <button
-              onClick={handleRecordWeeklyPlay}
-              disabled={isRecordingWeekly || view?.weeklyPlayed || view?.weeklyTitle === "—"}
+              type="button"
+              onClick={handleClearReserve}
+              disabled={isUpdatingReserve || !hasSelectedGame(view?.reserveTitle)}
               className="rounded-full bg-white/10 px-5 py-3 text-sm font-semibold text-white transition disabled:cursor-not-allowed disabled:bg-white/5 disabled:text-slate-500"
             >
-              {isRecordingWeekly ? "Recording..." : view?.weeklyPlayed ? "Played" : "Mark played"}
+              Clear
             </button>
           </div>
         </div>
@@ -267,6 +416,12 @@ export default function Board() {
                 <option value="daily">Daily pool</option>
                 <option value="weekly">Weekly pool</option>
               </select>
+              <input
+                value={platformsInput}
+                onChange={(event) => setPlatformsInput(event.target.value)}
+                className="w-full rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-white outline-none transition focus:border-accent focus:bg-white/10"
+                placeholder="Platforms (e.g. Switch, PC, Steam Deck)"
+              />
               <div className="flex justify-end">
                 <button
                   type="submit"

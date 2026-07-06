@@ -12,10 +12,15 @@ import { addEvent } from "../../database/services.ts";
 import type { Game } from "../../database/db.ts";
 import type { UseCaseResult } from "../useCaseResult.ts";
 
-export async function recordDailyPlay(): Promise<UseCaseResult<Game>> {
+export interface RecordedPlayResult extends Game {
+  reward: number;
+  playtimeMinutes: number;
+}
+
+export async function recordDailyPlay(playtimeBlocks: number = 0): Promise<UseCaseResult<RecordedPlayResult>> {
   const timestamp = now();
   const board = await getCurrentBoard();
-  const rules = await evaluatePlayRules(board, "daily", timestamp);
+  const rules = await evaluatePlayRules(board, "daily", timestamp, playtimeBlocks);
 
   if (!rules.allowed) {
     return {
@@ -39,16 +44,23 @@ export async function recordDailyPlay(): Promise<UseCaseResult<Game>> {
     throw new Error("Invalid daily game selected: missing id");
   }
 
+  const playtimeMinutes = Math.max(0, Math.floor(playtimeBlocks)) * 30;
+
   await lockDaily();
-  await applyPlayReward("daily", game.id, rules.reward);
+  await applyPlayReward("daily", game.id, rules.reward, playtimeMinutes);
   await addEvent("PLAY_RECORDED", {
     gameId: game.id,
     pool: "daily",
+    playtimeMinutes,
     timestamp
   });
 
   return {
     success: true,
-    data: game
+    data: {
+      ...game,
+      reward: rules.reward,
+      playtimeMinutes
+    }
   };
 }

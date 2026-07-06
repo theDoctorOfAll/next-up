@@ -9,7 +9,8 @@ export interface Game {
   id?: number;
   title: string;
   pool: GamePool;
-  weight: number; // used for weighted RNG later
+  weight: number; // stored as step count from baseline weight 1 (0 = 1, -1 = 0.67, +1 = 1.5)
+  platforms?: string[];
   reserved: boolean;
   createdAt: number;
   updatedAt: number;
@@ -70,6 +71,14 @@ class NextUpDB extends Dexie {
 
     this.version(3).stores({
       games: "++id, title, pool, reserved",
+      events: "++id, type, timestamp",
+      points: "++id, timestamp",
+      board: "id",
+      metadata: "key"
+    });
+
+    this.version(4).stores({
+      games: "++id, title, pool, reserved, *platforms",
       events: "++id, type, timestamp",
       points: "++id, timestamp",
       board: "id",

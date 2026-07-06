@@ -1,8 +1,14 @@
-import type { BoardState, GamePool } from "../../database/db.ts";
+import { db, type BoardState, type GamePool } from "../../database/db.ts";
 
 const DAILY_REROLL_COST = 5;
 const WEEKLY_REROLL_COST = 10;
 const PLAY_REWARD = 15;
+const ADD_GAME_COST = 500;
+const CHANGE_POOL_COST = 10;
+const CHANGE_WEIGHT_COST = 15;
+const RESERVE_MOVE_COST = 25;
+const WEEKLY_PROGRESSION_REWARDS = [0, 5, 5, 10, 10, 15, 15];
+const PLAYTIME_REWARD_PER_30_MINUTES = 10;
 
 export interface RollRuleResult {
   allowed: boolean;
@@ -99,7 +105,8 @@ export async function evaluateRollRules(
 export async function evaluatePlayRules(
   board: BoardState,
   pool: GamePool,
-  _timestamp: number
+  timestamp: number,
+  playtimeBlocks: number = 0
 ): Promise<PlayRuleResult> {
   const isPlayed = pool === "daily" ? board.dailyPlayed : board.weeklyPlayed;
   const selectedGameId = pool === "daily" ? board.dailyGameId : board.weeklyGameId;
@@ -120,9 +127,33 @@ export async function evaluatePlayRules(
     };
   }
 
+  const playtimeUnits = Math.max(0, Math.floor(playtimeBlocks));
+  const playtimeReward = playtimeUnits * PLAYTIME_REWARD_PER_30_MINUTES;
+
+  if (pool === "weekly") {
+    const weekStart = startOfLocalWeek(timestamp);
+    const allEvents = await db.events.toArray();
+    const weeklyPlays = allEvents.filter((event) => event.type === "PLAY_RECORDED" && event.timestamp >= weekStart && event.payload?.pool === "weekly").length;
+    const progressionReward = WEEKLY_PROGRESSION_REWARDS[Math.min(weeklyPlays, WEEKLY_PROGRESSION_REWARDS.length - 1)];
+
+    return {
+      allowed: true,
+      reward: PLAY_REWARD + progressionReward + playtimeReward
+    };
+  }
+
   return {
     allowed: true,
-    reward: PLAY_REWARD
+    reward: PLAY_REWARD + playtimeReward
+  };
+}
+
+export async function getLibraryRuleCosts() {
+  return {
+    addGame: ADD_GAME_COST,
+    changePool: CHANGE_POOL_COST,
+    changeWeight: CHANGE_WEIGHT_COST,
+    moveToReserve: RESERVE_MOVE_COST
   };
 }
 
@@ -150,7 +181,8 @@ export async function applyRollCost(
 export async function applyPlayReward(
   pool: GamePool,
   gameId: number,
-  reward: number = PLAY_REWARD
+  reward: number = PLAY_REWARD,
+  playtimeMinutes: number = 0
 ) {
   if (reward <= 0) {
     return;
@@ -162,6 +194,7 @@ export async function applyPlayReward(
     pool,
     gameId,
     amount: reward,
+    playtimeMinutes,
     reason: `${pool} play`
   });
 
