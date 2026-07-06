@@ -9,6 +9,10 @@ export interface BoardView {
 
     reserveTitle: string;
 
+    dailyPlayed: boolean;
+
+    weeklyPlayed: boolean;
+
 }
 
 export async function getBoardView(): Promise<BoardView> {
@@ -36,9 +40,12 @@ export async function getBoardView(): Promise<BoardView> {
 
         weeklyTitle: weekly?.title ?? "—",
 
-        reserveTitle: reserve?.title ?? "—"
+        reserveTitle: reserve?.title ?? "—",
+
+        dailyPlayed: board.dailyPlayed ?? false,
+
+        weeklyPlayed: board.weeklyPlayed ?? false
 
     };
 
-    
 }

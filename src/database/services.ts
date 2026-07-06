@@ -1,6 +1,6 @@
-import { db, type Game, type Event, type PointTransaction, type EventType } from "./db";
-import { now } from "../core/clock";
-import { addGameToLibrary } from "../domain/services/GameLibraryService";
+import { db, type Game, type Event, type PointTransaction, type EventType } from "./db.ts";
+import { now } from "../core/clock.ts";
+import { addGameToLibrary } from "../domain/services/GameLibraryService.ts";
 
 /**
  * EVENT WRITER
@@ -53,4 +53,8 @@ export async function updateGame(game: Game) {
   });
 
   await addEvent("GAME_UPDATED", { game });
+}
+
+export async function clearEventHistory() {
+  return db.events.clear();
 }

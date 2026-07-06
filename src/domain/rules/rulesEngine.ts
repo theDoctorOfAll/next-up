@@ -1,12 +1,18 @@
-import type { BoardState, GamePool } from "../../database/db";
-import { addEvent, addPoints, getPointTotal } from "../../database/services";
+import type { BoardState, GamePool } from "../../database/db.ts";
 
 const DAILY_REROLL_COST = 5;
 const WEEKLY_REROLL_COST = 10;
+const PLAY_REWARD = 15;
 
 export interface RollRuleResult {
   allowed: boolean;
   cost: number;
+  reason?: string;
+}
+
+export interface PlayRuleResult {
+  allowed: boolean;
+  reward: number;
   reason?: string;
 }
 
@@ -53,6 +59,18 @@ export async function evaluateRollRules(
       : isSameLocalWeek(previousRollAt, timestamp)
     : false;
 
+  const alreadyPlayed = pool === "daily"
+    ? board.dailyPlayed && board.dailyRolledAt !== undefined && isSameLocalDay(board.dailyRolledAt, timestamp)
+    : board.weeklyPlayed && board.weeklyRolledAt !== undefined && isSameLocalWeek(board.weeklyRolledAt, timestamp);
+
+  if (alreadyPlayed) {
+    return {
+      allowed: false,
+      cost: 0,
+      reason: `Cannot reroll an already-played ${pool} game until the next ${pool === "daily" ? "day" : "week"}.`
+    };
+  }
+
   if (!isReroll) {
     return {
       allowed: true,
@@ -61,6 +79,7 @@ export async function evaluateRollRules(
   }
 
   const cost = pool === "daily" ? DAILY_REROLL_COST : WEEKLY_REROLL_COST;
+  const { getPointTotal } = await import("../../database/services.ts");
   const balance = await getPointTotal();
 
   if (balance < cost) {
@@ -77,6 +96,36 @@ export async function evaluateRollRules(
   };
 }
 
+export async function evaluatePlayRules(
+  board: BoardState,
+  pool: GamePool,
+  _timestamp: number
+): Promise<PlayRuleResult> {
+  const isPlayed = pool === "daily" ? board.dailyPlayed : board.weeklyPlayed;
+  const selectedGameId = pool === "daily" ? board.dailyGameId : board.weeklyGameId;
+
+  if (isPlayed) {
+    return {
+      allowed: false,
+      reward: 0,
+      reason: "This game has already been marked as played for the current period."
+    };
+  }
+
+  if (!selectedGameId) {
+    return {
+      allowed: false,
+      reward: 0,
+      reason: "No game is currently selected for this pool."
+    };
+  }
+
+  return {
+    allowed: true,
+    reward: PLAY_REWARD
+  };
+}
+
 export async function applyRollCost(
   pool: GamePool,
   cost: number,
@@ -86,6 +135,8 @@ export async function applyRollCost(
     return;
   }
 
+  const { addEvent, addPoints } = await import("../../database/services.ts");
+
   const eventId = await addEvent("POINTS_SPENT", {
     pool,
     gameId,
@@ -94,4 +145,25 @@ export async function applyRollCost(
   });
 
   await addPoints(-cost, `${pool} reroll`, eventId);
+}
+
+export async function applyPlayReward(
+  pool: GamePool,
+  gameId: number,
+  reward: number = PLAY_REWARD
+) {
+  if (reward <= 0) {
+    return;
+  }
+
+  const { addEvent, addPoints } = await import("../../database/services.ts");
+
+  const eventId = await addEvent("POINTS_AWARDED", {
+    pool,
+    gameId,
+    amount: reward,
+    reason: `${pool} play`
+  });
+
+  await addPoints(reward, `${pool} play`, eventId);
 }

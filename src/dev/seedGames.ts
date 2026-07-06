@@ -12,8 +12,8 @@ export async function seedGamesOnce() {
 
   seeded = true;
 
-  await addGameToLibrary("Hades", "daily");
-  await addGameToLibrary("Slay the Spire", "daily");
+  await addGameToLibrary("Hades II", "daily");
+  await addGameToLibrary("Balatro", "daily");
   await addGameToLibrary("Forza Horizon 5", "daily");
 
   await addGameToLibrary("Stardew Valley", "weekly");

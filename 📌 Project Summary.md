@@ -179,6 +179,9 @@ The `metadata` table tracks app/data initialization state, including the initial
 - Seed data is idempotent and correctly classifies daily/weekly games
 - Board updates are centralized through `BoardService`
 - Initial reroll rules and point spending are implemented
+- The board now shows a front-facing point balance
+- Users can add games directly to the daily or weekly RNG pools from the board
+- A basic full-library view is available from the app navigation
 
 ### Completed: Milestone 2.2.1 - Game Library Stabilization
 
@@ -194,6 +197,13 @@ The `metadata` table tracks app/data initialization state, including the initial
 - Added `debugGameIntegrity` dev helper
 - Added Dexie `metadata` table for seed state
 - Deleted the old unsafe `useDBTest` hook
+
+### Recently Added: Minimal Front-Facing UI Slice
+
+- Added a point balance card to the main board view
+- Added a lightweight form for adding games to the daily or weekly pools
+- Added a library page that lists the full game collection with pool and weight information
+- Wired the board and library pages into the app router for quick access
 
 ### In Progress: Milestone 2.3 - Board Service and Rules Foundation
 
@@ -252,7 +262,7 @@ After restarting the app in development, the dev seed will repopulate the librar
 - Point earning is not yet implemented from actual play
 - Daily/weekly lock rules are not fully enforced
 - Reserve slot mechanics are only partially represented
-- Library editor UI does not exist yet
+- Library editor UI is still minimal and does not yet support full CRUD or advanced pool management
 - Event log and statistics UIs are still placeholders
 - No automated test suite exists yet
 
