@@ -1,5 +1,5 @@
 import {
-  addGameToLibrary,
+  addGameInternal,
   markInitialLibrarySeeded
 } from "../domain/services/GameLibraryService";
 
@@ -12,13 +12,14 @@ export async function seedGamesOnce() {
 
   seeded = true;
 
-  await addGameToLibrary("Hades II", "daily");
-  await addGameToLibrary("Balatro", "daily");
-  await addGameToLibrary("Forza Horizon 5", "daily");
+  // Add games without charging points during initial seed
+  await addGameInternal("Hades II", "daily", [], false);
+  await addGameInternal("Balatro", "daily", [], false);
+  await addGameInternal("Forza Horizon 5", "daily", [], false);
 
-  await addGameToLibrary("Stardew Valley", "weekly");
-  await addGameToLibrary("Final Fantasy VII Remake", "weekly");
-  await addGameToLibrary("Star Wars Outlaws", "weekly");
+  await addGameInternal("Stardew Valley", "weekly", [], false);
+  await addGameInternal("Final Fantasy VII Remake", "weekly", [], false);
+  await addGameInternal("Star Wars Outlaws", "weekly", [], false);
 
   await markInitialLibrarySeeded();
 }

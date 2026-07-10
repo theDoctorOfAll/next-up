@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { ensureGameIntegrity } from "../domain/services/GameLibraryService";
 
 let initializationPromise: Promise<void> | undefined;
+let initStarted = false;
 
 async function initializeAppData() {
   if (import.meta.env.DEV) {
@@ -18,11 +19,24 @@ export function useAppInitialization() {
   const [error, setError] = useState<unknown>();
 
   useEffect(() => {
+    // Guard against React.StrictMode's double-execution
+    if (initStarted) {
+      return;
+    }
+    
+    initStarted = true;
     initializationPromise ??= initializeAppData();
 
     initializationPromise
-      .then(() => setInitialized(true))
-      .catch((cause) => setError(cause));
+      .then(() => {
+        console.log("App initialization successful");
+        setInitialized(true);
+      })
+      .catch((cause) => {
+        console.error("App initialization failed:", cause);
+        console.error("Error details:", cause instanceof Error ? cause.message : String(cause));
+        setError(cause);
+      });
   }, []);
 
   return {

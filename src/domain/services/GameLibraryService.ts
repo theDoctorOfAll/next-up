@@ -86,6 +86,15 @@ export async function addGameToLibrary(
   poolInput: GamePool,
   platformsInput: string[] = []
 ): Promise<number> {
+  return addGameInternal(titleInput, poolInput, platformsInput, true);
+}
+
+export async function addGameInternal(
+  titleInput: string,
+  poolInput: GamePool,
+  platformsInput: string[] = [],
+  shouldCharge: boolean = true
+): Promise<number> {
   assertValidPool(poolInput);
 
   const title = cleanTitle(titleInput);
@@ -117,11 +126,13 @@ export async function addGameToLibrary(
     return duplicate.id;
   }
 
-  await chargeLibraryCost(ADD_GAME_COST, "add game", {
-    title,
-    pool: poolInput,
-    reason: "add game"
-  });
+  if (shouldCharge) {
+    await chargeLibraryCost(ADD_GAME_COST, "add game", {
+      title,
+      pool: poolInput,
+      reason: "add game"
+    });
+  }
 
   const id = await addGame({
     title,
