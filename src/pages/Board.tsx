@@ -1,34 +1,67 @@
-import { useEffect, useState, type FormEvent } from "react";
+import { useEffect, useMemo, useState, type FormEvent } from "react";
 import { Link } from "react-router-dom";
 import { rollDailyGame } from "../domain/useCases/rollDailyGame";
 import { rollWeeklyGame } from "../domain/useCases/rollWeeklyGame";
-import { recordDailyPlay } from "../domain/useCases/recordDailyPlay";
-import { recordWeeklyPlay } from "../domain/useCases/recordWeeklyPlay";
+import { recordPlaySession } from "../domain/useCases/recordPlaySession";
 import { getBoardView, type BoardView } from "../domain/queries/getBoardView";
 import { addGameToLibrary, parsePlatformsInput } from "../domain/services/GameLibraryService";
 import { clearReserveGame, setReserveGame } from "../domain/services/BoardService";
 import { getPointBalance } from "../database/repositories/pointRepository";
 import { getAllGames } from "../database/repositories/gameRepository";
 import type { Game, GamePool } from "../database/db";
+import TransientToast from "../components/TransientToast";
 
 const EMPTY_SLOT = "—";
-const BASE_PLAY_REWARD = 15;
-const PLAYTIME_REWARD_PER_30_MINUTES = 10;
+const PLAYTIME_STEP_MINUTES = 15;
+const MAX_PLAYTIME_MINUTES = 180;
+const PLAYTIME_REWARD_PER_15_MINUTES = 5;
+const DAILY_REROLL_COST = 5;
+const WEEKLY_REROLL_COST = 10;
 
-function normalizePlaytimeBlocks(value: number) {
+type PlaySessionPool = "daily" | "weekly" | "reserve";
+
+interface PlaySessionOption {
+  pool: PlaySessionPool;
+  title: string;
+}
+
+function normalizePlaytimeMinutes(value: number) {
   if (!Number.isFinite(value)) {
     return 0;
   }
 
-  return Math.max(0, Math.floor(value));
+  const bounded = Math.max(0, Math.min(MAX_PLAYTIME_MINUTES, Math.floor(value)));
+  return Math.floor(bounded / PLAYTIME_STEP_MINUTES) * PLAYTIME_STEP_MINUTES;
 }
 
-function getPlaytimeBonus(playtimeBlocks: number) {
-  return normalizePlaytimeBlocks(playtimeBlocks) * PLAYTIME_REWARD_PER_30_MINUTES;
+function getPlaytimeBonus(playtimeMinutes: number) {
+  return Math.floor(playtimeMinutes / PLAYTIME_STEP_MINUTES) * PLAYTIME_REWARD_PER_15_MINUTES;
 }
 
 function hasSelectedGame(title: string | undefined) {
   return Boolean(title && title !== EMPTY_SLOT);
+}
+
+function getSessionOptions(view: BoardView | null): PlaySessionOption[] {
+  if (!view) {
+    return [];
+  }
+
+  const options: PlaySessionOption[] = [];
+
+  if (hasSelectedGame(view.dailyTitle)) {
+    options.push({ pool: "daily", title: view.dailyTitle });
+  }
+
+  if (hasSelectedGame(view.weeklyTitle)) {
+    options.push({ pool: "weekly", title: view.weeklyTitle });
+  }
+
+  if (hasSelectedGame(view.reserveTitle)) {
+    options.push({ pool: "reserve", title: view.reserveTitle });
+  }
+
+  return options;
 }
 
 export default function Board() {
@@ -37,16 +70,24 @@ export default function Board() {
   const [title, setTitle] = useState("");
   const [pool, setPool] = useState<GamePool>("daily");
   const [platformsInput, setPlatformsInput] = useState("");
-  const [dailyPlaytimeBlocks, setDailyPlaytimeBlocks] = useState(0);
-  const [weeklyPlaytimeBlocks, setWeeklyPlaytimeBlocks] = useState(0);
+  const [playSessionPool, setPlaySessionPool] = useState<PlaySessionPool | "">("");
+  const [playtimeMinutes, setPlaytimeMinutes] = useState(0);
   const [libraryGames, setLibraryGames] = useState<Game[]>([]);
   const [reserveSelection, setReserveSelection] = useState("");
   const [message, setMessage] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
-  const [isRecordingDaily, setIsRecordingDaily] = useState(false);
-  const [isRecordingWeekly, setIsRecordingWeekly] = useState(false);
+  const [isRecordingSession, setIsRecordingSession] = useState(false);
+  const [isRollingDaily, setIsRollingDaily] = useState(false);
+  const [isRollingWeekly, setIsRollingWeekly] = useState(false);
   const [isUpdatingReserve, setIsUpdatingReserve] = useState(false);
   const [isFlyoutOpen, setIsFlyoutOpen] = useState(false);
+  const [isPlayDialogOpen, setIsPlayDialogOpen] = useState(false);
+
+  const sessionOptions = useMemo(() => getSessionOptions(view), [view]);
+  const selectedSessionOption = sessionOptions.find((option) => option.pool === playSessionPool);
+  const playtimeBonus = getPlaytimeBonus(playtimeMinutes);
+  const dailyRerollCost = view?.dailyIsReroll ? DAILY_REROLL_COST : 0;
+  const weeklyRerollCost = view?.weeklyIsReroll ? WEEKLY_REROLL_COST : 0;
 
   async function refreshBoard() {
     const [nextView, nextBalance, nextGames] = await Promise.all([
@@ -69,68 +110,110 @@ export default function Board() {
     void refreshBoard();
   }, []);
 
-  async function handleDailyRoll() {
-    const result = await rollDailyGame();
-
-    if (!result.success) {
-      setMessage(result.message ?? "Daily roll could not be completed.");
+  useEffect(() => {
+    if (sessionOptions.length === 0) {
+      setPlaySessionPool("");
       return;
     }
 
-    await refreshBoard();
+    if (!sessionOptions.some((option) => option.pool === playSessionPool)) {
+      setPlaySessionPool(sessionOptions[0].pool);
+    }
+  }, [playSessionPool, sessionOptions]);
+
+  useEffect(() => {
+    if (!message) {
+      return;
+    }
+
+    const timeoutId = window.setTimeout(() => {
+      setMessage(null);
+    }, 3500);
+
+    return () => window.clearTimeout(timeoutId);
+  }, [message]);
+
+  async function handleDailyRoll() {
+    setMessage(null);
+    setIsRollingDaily(true);
+
+    try {
+      const wasReroll = Boolean(view?.dailyIsReroll);
+      const rollCost = wasReroll ? DAILY_REROLL_COST : 0;
+      const result = await rollDailyGame();
+
+      if (!result.success) {
+        setMessage(result.message ?? "Daily roll could not be completed.");
+        return;
+      }
+
+      await refreshBoard();
+      setMessage(
+        `${wasReroll ? "Rerolled" : "Rolled"} daily game: ${result.data.title}${rollCost > 0 ? ` (-${rollCost} points)` : " (free)"}.`
+      );
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Daily roll could not be completed.");
+    } finally {
+      setIsRollingDaily(false);
+    }
   }
 
   async function handleWeeklyRoll() {
-    const result = await rollWeeklyGame();
+    setMessage(null);
+    setIsRollingWeekly(true);
 
-    if (!result.success) {
-      setMessage(result.message ?? "Weekly roll could not be completed.");
+    try {
+      const wasReroll = Boolean(view?.weeklyIsReroll);
+      const rollCost = wasReroll ? WEEKLY_REROLL_COST : 0;
+      const result = await rollWeeklyGame();
+
+      if (!result.success) {
+        setMessage(result.message ?? "Weekly roll could not be completed.");
+        return;
+      }
+
+      await refreshBoard();
+      setMessage(
+        `${wasReroll ? "Rerolled" : "Rolled"} weekly game: ${result.data.title}${rollCost > 0 ? ` (-${rollCost} points)` : " (free)"}.`
+      );
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Weekly roll could not be completed.");
+    } finally {
+      setIsRollingWeekly(false);
+    }
+  }
+
+  async function handleRecordSession() {
+    if (!playSessionPool) {
+      setMessage("Select an active game slot before recording a session.");
       return;
     }
 
-    await refreshBoard();
-  }
+    const normalizedMinutes = normalizePlaytimeMinutes(playtimeMinutes);
 
-  async function handleRecordDailyPlay() {
-    setMessage(null);
-    setIsRecordingDaily(true);
-
-    try {
-      const result = await recordDailyPlay(normalizePlaytimeBlocks(dailyPlaytimeBlocks));
-
-      if (!result.success) {
-        setMessage(result.message ?? "Daily play could not be recorded.");
-        return;
-      }
-
-      setDailyPlaytimeBlocks(0);
-      setMessage(`Recorded play for ${result.data.title}: +${result.data.reward} points.`);
-    } catch (error) {
-      setMessage(error instanceof Error ? error.message : "Could not record the daily play.");
-    } finally {
-      setIsRecordingDaily(false);
-      await refreshBoard();
+    if (normalizedMinutes <= 0) {
+      setMessage("Playtime must be greater than zero to record a session.");
+      return;
     }
-  }
 
-  async function handleRecordWeeklyPlay() {
     setMessage(null);
-    setIsRecordingWeekly(true);
+    setIsRecordingSession(true);
 
     try {
-      const result = await recordWeeklyPlay(normalizePlaytimeBlocks(weeklyPlaytimeBlocks));
+      const result = await recordPlaySession(playSessionPool, normalizedMinutes);
 
       if (!result.success) {
-        setMessage(result.message ?? "Weekly play could not be recorded.");
+        setMessage(result.message ?? "Play session could not be recorded.");
         return;
       }
 
-      setWeeklyPlaytimeBlocks(0);
-      setMessage(`Recorded play for ${result.data.title}: +${result.data.reward} points.`);
+      setPlaytimeMinutes(0);
+      setMessage(`Recorded ${result.data.playtimeMinutes} minutes for ${result.data.title}: +${result.data.reward} points.`);
+      setIsPlayDialogOpen(false);
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : "Could not record the weekly play.");
+      setMessage(error instanceof Error ? error.message : "Could not record this play session.");
     } finally {
-      setIsRecordingWeekly(false);
+      setIsRecordingSession(false);
       await refreshBoard();
     }
   }
@@ -222,20 +305,23 @@ export default function Board() {
         </div>
       </div>
 
-      {message ? (
-        <div className="rounded-[28px] border border-accent/20 bg-white/5 p-4 text-sm text-accent shadow-[0_20px_80px_-60px_rgba(170,59,255,0.5)]">
-          {message}
-        </div>
-      ) : null}
-
       <div className="rounded-[32px] border border-white/10 bg-slate-950/80 p-6 shadow-[0_30px_80px_-40px_rgba(0,0,0,0.75)]">
         <div className="flex flex-wrap items-center justify-between gap-4">
           <div>
             <p className="text-sm uppercase tracking-wide text-slate-400">Points balance</p>
             <p className="mt-2 text-4xl font-semibold tracking-tight text-accent">{balance}</p>
           </div>
-          <div className="rounded-3xl border border-accent/20 bg-white/5 px-4 py-3 text-sm text-slate-300">
-            Front-facing economy view
+          <div className="flex items-center gap-3">
+            <button
+              type="button"
+              onClick={() => setIsPlayDialogOpen(true)}
+              className="rounded-full border border-accent/30 bg-accent/10 px-4 py-2 text-sm font-semibold text-accent transition hover:bg-accent/20"
+            >
+              Record play
+            </button>
+            <div className="rounded-3xl border border-accent/20 bg-white/5 px-4 py-3 text-sm text-slate-300">
+              Front-facing economy view
+            </div>
           </div>
         </div>
       </div>
@@ -255,36 +341,20 @@ export default function Board() {
                 : "Roll to choose today\'s game."}
           </p>
           <div className="mt-6 space-y-3">
-            <label className="flex items-center gap-2 text-sm text-slate-400">
-              <span>Playtime (30-min blocks)</span>
-              <input
-                type="number"
-                min="0"
-                step="1"
-                value={dailyPlaytimeBlocks}
-                onChange={(event) => setDailyPlaytimeBlocks(normalizePlaytimeBlocks(Number(event.target.value)))}
-                className="w-24 rounded-full border border-white/10 bg-white/5 px-3 py-2 text-sm text-white outline-none transition focus:border-accent focus:bg-white/10"
-              />
-            </label>
-            <p className="text-xs text-slate-500">
-              Scores +{BASE_PLAY_REWARD + getPlaytimeBonus(dailyPlaytimeBlocks)} points: +{BASE_PLAY_REWARD} daily play, +{getPlaytimeBonus(dailyPlaytimeBlocks)} playtime.
-            </p>
             <div className="flex flex-wrap gap-3">
               <button
                 onClick={handleDailyRoll}
-                disabled={view?.dailyPlayed}
+                disabled={isRollingDaily || view?.dailyPlayed}
                 className="rounded-full bg-accent px-5 py-3 text-sm font-semibold text-black transition disabled:cursor-not-allowed disabled:bg-white/10 disabled:text-slate-400"
               >
-                Roll
-              </button>
-              <button
-                onClick={handleRecordDailyPlay}
-                disabled={isRecordingDaily || view?.dailyPlayed || !hasSelectedGame(view?.dailyTitle)}
-                className="rounded-full bg-white/10 px-5 py-3 text-sm font-semibold text-white transition disabled:cursor-not-allowed disabled:bg-white/5 disabled:text-slate-500"
-              >
-                {isRecordingDaily ? "Recording..." : view?.dailyPlayed ? "Played" : "Mark played"}
+                {isRollingDaily ? "Rolling..." : view?.dailyIsReroll ? "Reroll" : "Roll"}
               </button>
             </div>
+            <p className={`text-xs ${dailyRerollCost > balance ? "text-red-300" : "text-slate-500"}`}>
+              {view?.dailyIsReroll
+                ? `Reroll cost: ${DAILY_REROLL_COST} points${dailyRerollCost > balance ? " (insufficient balance)" : ""}.`
+                : "First daily roll each day is free."}
+            </p>
           </div>
         </div>
 
@@ -299,36 +369,20 @@ export default function Board() {
                 : "Roll to choose this week\'s game."}
           </p>
           <div className="mt-6 space-y-3">
-            <label className="flex items-center gap-2 text-sm text-slate-400">
-              <span>Playtime (30-min blocks)</span>
-              <input
-                type="number"
-                min="0"
-                step="1"
-                value={weeklyPlaytimeBlocks}
-                onChange={(event) => setWeeklyPlaytimeBlocks(normalizePlaytimeBlocks(Number(event.target.value)))}
-                className="w-24 rounded-full border border-white/10 bg-white/5 px-3 py-2 text-sm text-white outline-none transition focus:border-accent focus:bg-white/10"
-              />
-            </label>
-            <p className="text-xs text-slate-500">
-              Scores at least +{BASE_PLAY_REWARD + getPlaytimeBonus(weeklyPlaytimeBlocks)} points: +{BASE_PLAY_REWARD} weekly play, +{getPlaytimeBonus(weeklyPlaytimeBlocks)} playtime, plus progression bonus when eligible.
-            </p>
             <div className="flex flex-wrap gap-3">
               <button
                 onClick={handleWeeklyRoll}
-                disabled={view?.weeklyPlayed}
+                disabled={isRollingWeekly || view?.weeklyPlayed}
                 className="rounded-full bg-accent px-5 py-3 text-sm font-semibold text-black transition disabled:cursor-not-allowed disabled:bg-white/10 disabled:text-slate-400"
               >
-                Roll
-              </button>
-              <button
-                onClick={handleRecordWeeklyPlay}
-                disabled={isRecordingWeekly || view?.weeklyPlayed || !hasSelectedGame(view?.weeklyTitle)}
-                className="rounded-full bg-white/10 px-5 py-3 text-sm font-semibold text-white transition disabled:cursor-not-allowed disabled:bg-white/5 disabled:text-slate-500"
-              >
-                {isRecordingWeekly ? "Recording..." : view?.weeklyPlayed ? "Played" : "Mark played"}
+                {isRollingWeekly ? "Rolling..." : view?.weeklyIsReroll ? "Reroll" : "Roll"}
               </button>
             </div>
+            <p className={`text-xs ${weeklyRerollCost > balance ? "text-red-300" : "text-slate-500"}`}>
+              {view?.weeklyIsReroll
+                ? `Reroll cost: ${WEEKLY_REROLL_COST} points${weeklyRerollCost > balance ? " (insufficient balance)" : ""}.`
+                : "First weekly roll each week is free."}
+            </p>
           </div>
         </div>
       </div>
@@ -435,6 +489,86 @@ export default function Board() {
           </div>
         </div>
       ) : null}
+
+      {isPlayDialogOpen ? (
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-slate-950/80 px-4 py-6 backdrop-blur-sm">
+          <div className="w-full max-w-lg rounded-[32px] border border-white/10 bg-slate-950/95 p-6 shadow-[0_40px_120px_-60px_rgba(0,0,0,0.7)] z-[10000]">
+            <div className="flex items-center justify-between gap-4">
+              <div>
+                <h2 className="text-xl font-semibold">Record play session</h2>
+                <p className="mt-2 text-sm text-slate-400">
+                  Choose an active slot and log playtime in 15-minute increments.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsPlayDialogOpen(false)}
+                className="rounded-full border border-white/10 bg-white/5 px-3 py-2 text-sm font-semibold text-white transition hover:border-accent/40 hover:bg-white/10"
+              >
+                Close
+              </button>
+            </div>
+
+            <div className="mt-6 space-y-5">
+              <label className="block space-y-2 text-sm text-slate-400">
+                <span className="text-xs uppercase tracking-wide">Played title</span>
+                <select
+                  value={playSessionPool}
+                  onChange={(event) => setPlaySessionPool(event.target.value as PlaySessionPool)}
+                  className="w-full rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-white outline-none transition focus:border-accent focus:bg-white/10"
+                >
+                  {sessionOptions.length === 0 ? (
+                    <option value="">No active titles</option>
+                  ) : (
+                    sessionOptions.map((option) => (
+                      <option key={option.pool} value={option.pool}>
+                        {option.title} ({option.pool})
+                      </option>
+                    ))
+                  )}
+                </select>
+              </label>
+
+              <div className="space-y-3">
+                <div className="flex items-center justify-between text-xs uppercase tracking-wide text-slate-400">
+                  <span>Playtime</span>
+                  <span>{playtimeMinutes} minutes</span>
+                </div>
+                <input
+                  type="range"
+                  min="0"
+                  max={MAX_PLAYTIME_MINUTES}
+                  step={PLAYTIME_STEP_MINUTES}
+                  value={playtimeMinutes}
+                  onChange={(event) => setPlaytimeMinutes(normalizePlaytimeMinutes(Number(event.target.value)))}
+                  className="w-full accent-accent"
+                />
+                <p className="text-xs text-slate-500">Playtime bonus from this session: +{playtimeBonus} points.</p>
+              </div>
+            </div>
+
+            <div className="mt-6 flex justify-end gap-3">
+              <button
+                type="button"
+                onClick={() => setIsPlayDialogOpen(false)}
+                className="rounded-full bg-white/10 px-5 py-3 text-sm font-semibold text-white transition hover:bg-white/15"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleRecordSession}
+                disabled={isRecordingSession || playtimeMinutes <= 0 || !selectedSessionOption}
+                className="rounded-full bg-accent px-5 py-3 text-sm font-semibold text-black transition disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {isRecordingSession ? "Recording..." : "Record session"}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      <TransientToast message={message} onClose={() => setMessage(null)} />
     </div>
   );
 }

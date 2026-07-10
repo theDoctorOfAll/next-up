@@ -6,11 +6,12 @@ Next Up is a local-first Progressive Web App for managing a personal game librar
 
 - selects a daily game and a weekly game from curated pools
 - lets players mark games as played and earn points
-- supports playtime input in 15-minute blocks and rewards longer sessions
+- supports playtime input in 30-minute blocks and rewards longer sessions
 - enforces reroll costs and period-based lock logic
 - supports a reserve slot with a 25-point move cost
 - keeps reserved games out of the active pools and shows them in a dedicated library section
 - supports per-game platform tagging for later filtering and discovery
+- includes settings tools for reset, developer point grants, and library CSV import/export
 - provides event-history and statistics views for the current economy state
 
 ## Current status
@@ -25,7 +26,8 @@ Implemented features include:
 - reserved-game grouping in the library
 - weight adjustments with step-based values and costed actions
 - platform tagging on games and library editing
-- playtime-aware scoring with 15-minute inputs
+- playtime-aware scoring with 30-minute playtime units
+- settings page tools for reset, CSV export/import, and developer point grants
 - event log and stats pages
 - route-based navigation for board, library, events, and stats
 

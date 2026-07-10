@@ -13,6 +13,21 @@ import { addEvent } from "../../database/services";
 import type { Game } from "../../database/db";
 import type { UseCaseResult } from "../useCaseResult";
 
+function startOfLocalWeek(timestamp: number) {
+  const date = new Date(timestamp);
+  const day = date.getDay();
+
+  return new Date(
+    date.getFullYear(),
+    date.getMonth(),
+    date.getDate() - day
+  ).getTime();
+}
+
+function isSameLocalWeek(left: number, right: number) {
+  return startOfLocalWeek(left) === startOfLocalWeek(right);
+}
+
 export async function rollWeeklyGame(): Promise<UseCaseResult<Game>> {
   const timestamp = now();
   const board = await getCurrentBoard();
@@ -26,8 +41,12 @@ export async function rollWeeklyGame(): Promise<UseCaseResult<Game>> {
   }
 
   const games = await getEligibleGames("weekly");
+  const isReroll = Boolean(board.weeklyRolledAt && isSameLocalWeek(board.weeklyRolledAt, timestamp));
+  const rerollCandidates = isReroll && board.weeklyGameId && games.length > 1
+    ? games.filter((game) => game.id !== board.weeklyGameId)
+    : games;
 
-  const picked = weightedPick(games);
+  const picked = weightedPick(rerollCandidates.length > 0 ? rerollCandidates : games);
 
   if (!picked) return {
     success: false,

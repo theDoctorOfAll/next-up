@@ -1,5 +1,6 @@
 import { db, type Game, type Event, type PointTransaction, type EventType } from "./db.ts";
 import { now } from "../core/clock.ts";
+import { resetClockOffset } from "../core/clock.ts";
 import { addGameToLibrary } from "../domain/services/GameLibraryService.ts";
 import { getBoard, saveBoard } from "./repositories/boardRepository";
 
@@ -57,18 +58,21 @@ export async function updateGame(game: Game) {
 }
 
 export async function clearEventHistory() {
+  resetClockOffset();
+
   const board = await getBoard();
+  const allGames = await db.games.toArray();
+  const resetTimestamp = now();
 
-  if (board.reserveGameId) {
-    const reserveGame = await db.games.get(board.reserveGameId);
-
-    if (reserveGame) {
-      await db.games.update(board.reserveGameId, {
-        ...reserveGame,
+  if (allGames.length > 0) {
+    await db.games.bulkPut(
+      allGames.map((game) => ({
+        ...game,
         reserved: false,
-        updatedAt: now()
-      });
-    }
+        weight: 0,
+        updatedAt: resetTimestamp
+      }))
+    );
   }
 
   board.dailyGameId = undefined;

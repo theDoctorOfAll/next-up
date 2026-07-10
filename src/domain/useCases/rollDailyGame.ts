@@ -13,6 +13,16 @@ import { addEvent } from "../../database/services";
 import type { Game } from "../../database/db";
 import type { UseCaseResult } from "../useCaseResult";
 
+function startOfLocalDay(timestamp: number) {
+  const date = new Date(timestamp);
+
+  return new Date(date.getFullYear(), date.getMonth(), date.getDate()).getTime();
+}
+
+function isSameLocalDay(left: number, right: number) {
+  return startOfLocalDay(left) === startOfLocalDay(right);
+}
+
 export async function rollDailyGame(): Promise<UseCaseResult<Game>> {
   const timestamp = now();
   const board = await getCurrentBoard();
@@ -26,8 +36,12 @@ export async function rollDailyGame(): Promise<UseCaseResult<Game>> {
   }
 
   const games = await getEligibleGames("daily");
+  const isReroll = Boolean(board.dailyRolledAt && isSameLocalDay(board.dailyRolledAt, timestamp));
+  const rerollCandidates = isReroll && board.dailyGameId && games.length > 1
+    ? games.filter((game) => game.id !== board.dailyGameId)
+    : games;
 
-  const picked = weightedPick(games);
+  const picked = weightedPick(rerollCandidates.length > 0 ? rerollCandidates : games);
 
   if (!picked) return {
     success: false,

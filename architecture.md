@@ -8,12 +8,13 @@ Next Up is a local-first Progressive Web App for selecting games from a personal
 
 ### 1. UI layer
 
-The presentation layer is built with React and TypeScript. The main experience is centered around the board page, while the library, events, and stats pages expose the current collection and economy state.
+The presentation layer is built with React and TypeScript. The main experience is centered around the board page, while the library, events, stats, and settings pages expose the current collection and economy state.
 
 Responsibilities:
 - render the board, point balance, reserve slot, and game-selection controls
 - trigger domain actions such as rolling, recording play, reserving games, and adding games
 - collect platform tags and playtime input for library entries and play recording
+- provide utility workflows such as local reset, developer point grants, and CSV import/export for the library
 - present feedback from the rules and persistence layers
 
 ### 2. Domain layer
@@ -23,7 +24,7 @@ The domain layer contains the app’s core behavior and business rules.
 Key areas:
 - use cases for rolling daily and weekly games
 - use cases for recording daily and weekly plays
-- a rules engine for roll eligibility, reroll costs, play rewards, playtime scoring, lock state, and reserve behavior
+- a rules engine for roll eligibility, reroll costs, play rewards, playtime scoring in 30-minute units, lock state, and reserve behavior
 - board services for managing the live board state
 - library services for validating, adding, grouping games, and adjusting weights/platform metadata
 - query helpers for the board view, event log, and stats summary
@@ -64,6 +65,8 @@ The rules engine is the decision center for the app economy. It governs:
 - whether a title can be marked as played
 - the reward for recording play, including playtime bonuses
 - whether a game can be moved into the reserve slot
+
+The current playtime reward model applies +10 points per 30-minute playtime unit provided during play recording.
 
 ### Board state
 

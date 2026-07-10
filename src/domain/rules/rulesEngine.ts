@@ -1,5 +1,7 @@
 import { db, type BoardState, type GamePool } from "../../database/db.ts";
 
+export type PlayPool = GamePool | "reserve";
+
 const DAILY_REROLL_COST = 5;
 const WEEKLY_REROLL_COST = 10;
 const PLAY_REWARD = 15;
@@ -8,7 +10,7 @@ const CHANGE_POOL_COST = 10;
 const CHANGE_WEIGHT_COST = 15;
 const RESERVE_MOVE_COST = 25;
 const WEEKLY_PROGRESSION_REWARDS = [0, 5, 5, 10, 10, 15, 15];
-const PLAYTIME_REWARD_PER_30_MINUTES = 10;
+const PLAYTIME_REWARD_PER_15_MINUTES = 5;
 
 export interface RollRuleResult {
   allowed: boolean;
@@ -104,20 +106,16 @@ export async function evaluateRollRules(
 
 export async function evaluatePlayRules(
   board: BoardState,
-  pool: GamePool,
+  pool: PlayPool,
   timestamp: number,
-  playtimeBlocks: number = 0
+  playtimeMinutes: number = 0
 ): Promise<PlayRuleResult> {
-  const isPlayed = pool === "daily" ? board.dailyPlayed : board.weeklyPlayed;
-  const selectedGameId = pool === "daily" ? board.dailyGameId : board.weeklyGameId;
-
-  if (isPlayed) {
-    return {
-      allowed: false,
-      reward: 0,
-      reason: "This game has already been marked as played for the current period."
-    };
-  }
+  const selectedGameId =
+    pool === "daily"
+      ? board.dailyGameId
+      : pool === "weekly"
+        ? board.weeklyGameId
+        : board.reserveGameId;
 
   if (!selectedGameId) {
     return {
@@ -127,8 +125,17 @@ export async function evaluatePlayRules(
     };
   }
 
-  const playtimeUnits = Math.max(0, Math.floor(playtimeBlocks));
-  const playtimeReward = playtimeUnits * PLAYTIME_REWARD_PER_30_MINUTES;
+  const normalizedPlaytimeMinutes = Math.max(0, Math.floor(playtimeMinutes));
+
+  if (normalizedPlaytimeMinutes <= 0) {
+    return {
+      allowed: false,
+      reward: 0,
+      reason: "Playtime must be greater than zero to record a session."
+    };
+  }
+
+  const playtimeReward = Math.floor(normalizedPlaytimeMinutes / 15) * PLAYTIME_REWARD_PER_15_MINUTES;
 
   if (pool === "weekly") {
     const weekStart = startOfLocalWeek(timestamp);
@@ -139,6 +146,13 @@ export async function evaluatePlayRules(
     return {
       allowed: true,
       reward: PLAY_REWARD + progressionReward + playtimeReward
+    };
+  }
+
+  if (pool === "reserve") {
+    return {
+      allowed: true,
+      reward: playtimeReward
     };
   }
 
@@ -179,7 +193,7 @@ export async function applyRollCost(
 }
 
 export async function applyPlayReward(
-  pool: GamePool,
+  pool: PlayPool,
   gameId: number,
   reward: number = PLAY_REWARD,
   playtimeMinutes: number = 0

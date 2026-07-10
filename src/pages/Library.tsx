@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 import { getAllGames } from "../database/repositories/gameRepository";
 import { adjustGameWeightInLibrary, deleteGameFromLibrary, getWeightValueFromSteps, parsePlatformsInput, updateGameInLibrary } from "../domain/services/GameLibraryService";
 import type { Game, GamePool } from "../database/db";
+import TransientToast from "../components/TransientToast";
 
 const poolLabels: Record<GamePool, string> = {
   daily: "Daily pool",
@@ -104,6 +105,18 @@ export default function Library() {
     void refreshLibrary();
   }, []);
 
+  useEffect(() => {
+    if (!message) {
+      return;
+    }
+
+    const timeoutId = window.setTimeout(() => {
+      setMessage(null);
+    }, 3500);
+
+    return () => window.clearTimeout(timeoutId);
+  }, [message]);
+
   const groupedGames = useMemo(() => {
     return (Object.keys(poolLabels) as GamePool[]).reduce<Record<GamePool, Game[]>>(
       (acc, pool) => {
@@ -136,12 +149,6 @@ export default function Library() {
       </div>
 
       <div className="rounded-[28px] border border-white/10 bg-slate-950/80 p-4 shadow-[0_30px_80px_-40px_rgba(0,0,0,0.75)] sm:p-6">
-        {message ? (
-          <div className="mb-4 rounded-2xl border border-accent/20 bg-white/5 p-3 text-sm text-accent">
-            {message}
-          </div>
-        ) : null}
-
         <p className="text-sm text-slate-300">
           {games.length} game{games.length === 1 ? "" : "s"} tracked.
         </p>
@@ -388,6 +395,8 @@ export default function Library() {
           </div>
         </div>
       ) : null}
+
+      <TransientToast message={message} onClose={() => setMessage(null)} />
     </div>
   );
 }

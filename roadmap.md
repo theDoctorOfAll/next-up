@@ -57,20 +57,27 @@ Delivered:
 - weight adjustment actions with 15-point costs
 - step-based weight storage to avoid floating-point drift
 - platform tagging for games and library editing
-- playtime entry in 15-minute blocks and playtime-based scoring
+- playtime entry in 30-minute blocks and playtime-based scoring
 - direct weight-adjustment affordances from the library list
+
+### Phase 7 — Settings and data portability (Complete)
+
+Delivered:
+- local state reset controls
+- developer utility for point grants
+- library CSV export flow
+- library CSV import flow with title-based upsert behavior
 
 ## Near-term priorities
 
-### Phase 7 — Polish and hardening
+### Phase 8 — Polish and hardening
 
 Planned work:
 - refine empty states and interaction feedback
 - add platform-based filtering and search
-- improve settings and reset controls
 - add backup or export-friendly flows
 
-### Phase 8 — Testing and release readiness
+### Phase 9 — Testing and release readiness
 
 Planned work:
 - rules-engine tests

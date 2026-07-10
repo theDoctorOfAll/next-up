@@ -4,6 +4,8 @@ import { clearEventHistory, addPoints } from "../database/services";
 import { getPointBalance } from "../database/repositories/pointRepository";
 import { addGame, getAllGames, updateGame } from "../database/repositories/gameRepository";
 import type { Game, GamePool } from "../database/db";
+import { advanceClockByDays, getClockOffsetMs } from "../core/clock";
+import TransientToast from "../components/TransientToast";
 
 function normalizeTitle(value: string) {
   return value.trim().replace(/\s+/g, " ").toLocaleLowerCase();
@@ -96,6 +98,7 @@ export default function Settings() {
   const [message, setMessage] = useState<string | null>(null);
   const [isResetting, setIsResetting] = useState(false);
   const [isGrantingPoints, setIsGrantingPoints] = useState(false);
+  const [isJumpingDay, setIsJumpingDay] = useState(false);
   const [isExportingLibrary, setIsExportingLibrary] = useState(false);
   const [isImportingLibrary, setIsImportingLibrary] = useState(false);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
@@ -107,6 +110,18 @@ export default function Settings() {
   useEffect(() => {
     void refreshSettings();
   }, []);
+
+  useEffect(() => {
+    if (!message) {
+      return;
+    }
+
+    const timeoutId = window.setTimeout(() => {
+      setMessage(null);
+    }, 3500);
+
+    return () => window.clearTimeout(timeoutId);
+  }, [message]);
 
   async function handleGrantPoints() {
     setIsGrantingPoints(true);
@@ -139,6 +154,23 @@ export default function Settings() {
       setMessage(error instanceof Error ? error.message : "Could not reset settings.");
     } finally {
       setIsResetting(false);
+    }
+  }
+
+  async function handleJumpToNextDay() {
+    setIsJumpingDay(true);
+    setMessage(null);
+
+    try {
+      const nextOffsetMs = advanceClockByDays(1);
+      const simulatedNow = new Date(Date.now() + nextOffsetMs);
+      const offsetDays = Math.trunc(getClockOffsetMs() / (24 * 60 * 60 * 1000));
+
+      setMessage(`Jumped to next day. Simulated date is now ${simulatedNow.toLocaleString()} (offset: +${offsetDays} day${offsetDays === 1 ? "" : "s"}).`);
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Could not jump to the next day.");
+    } finally {
+      setIsJumpingDay(false);
     }
   }
 
@@ -289,12 +321,6 @@ export default function Settings() {
         </div>
       </div>
 
-      {message ? (
-        <div className="rounded-[28px] border border-accent/20 bg-white/5 p-4 text-sm text-accent">
-          {message}
-        </div>
-      ) : null}
-
       <div className="rounded-[32px] border border-white/10 bg-slate-950/80 p-6 shadow-[0_30px_80px_-40px_rgba(0,0,0,0.75)]">
         <div className="flex flex-wrap items-center justify-between gap-4">
           <div>
@@ -309,6 +335,14 @@ export default function Settings() {
               className="rounded-full border border-accent/30 bg-accent/10 px-5 py-3 text-sm font-semibold text-accent transition hover:border-accent/50 hover:bg-accent/20 disabled:cursor-not-allowed disabled:opacity-60"
             >
               {isGrantingPoints ? "Adding..." : "Add 100 points"}
+            </button>
+            <button
+              type="button"
+              onClick={() => void handleJumpToNextDay()}
+              disabled={isJumpingDay}
+              className="rounded-full border border-indigo-400/30 bg-indigo-500/10 px-5 py-3 text-sm font-semibold text-indigo-300 transition hover:border-indigo-400/50 hover:bg-indigo-500/20 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              {isJumpingDay ? "Jumping..." : "Jump to next day"}
             </button>
             <button
               type="button"
@@ -360,6 +394,8 @@ export default function Settings() {
           />
         </div>
       </div>
+
+      <TransientToast message={message} onClose={() => setMessage(null)} />
     </div>
   );
 }
