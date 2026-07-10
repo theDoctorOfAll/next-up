@@ -57,7 +57,8 @@ Delivered:
 - weight adjustment actions with 15-point costs
 - step-based weight storage to avoid floating-point drift
 - platform tagging for games and library editing
-- playtime entry in 30-minute blocks and playtime-based scoring
+- unified play-session recording for daily, weekly, and reserve slots
+- playtime entry in 15-minute increments and playtime-based scoring
 - direct weight-adjustment affordances from the library list
 
 ### Phase 7 — Settings and data portability (Complete)
@@ -68,16 +69,25 @@ Delivered:
 - library CSV export flow
 - library CSV import flow with title-based upsert behavior
 
+### Phase 8 — Shell, installability, and interaction polish (Complete)
+
+Delivered:
+- installable PWA build with manifest and generated service worker
+- runtime-responsive shell with desktop rail and mobile overlay sidebar
+- bottom overlay toast dialogs for transient action feedback
+- reroll cost feedback on board cards
+- reroll behavior that avoids reselecting the same title when alternatives exist
+
 ## Near-term priorities
 
-### Phase 8 — Polish and hardening
+### Phase 9 — Polish and hardening
 
 Planned work:
 - refine empty states and interaction feedback
 - add platform-based filtering and search
 - add backup or export-friendly flows
 
-### Phase 9 — Testing and release readiness
+### Phase 10 — Testing and release readiness
 
 Planned work:
 - rules-engine tests

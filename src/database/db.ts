@@ -3,7 +3,8 @@ import Dexie, { type Table } from "dexie";
 /**
  * GAME MODEL
  */
-export type GamePool = "daily" | "weekly";
+export type GamePool = "daily" | "weekly" | "none";
+export type ActiveGamePool = Exclude<GamePool, "none">;
 
 export interface Game {
   id?: number;
@@ -11,6 +12,7 @@ export interface Game {
   pool: GamePool;
   weight: number; // stored as step count from baseline weight 1 (0 = 1, -1 = 0.67, +1 = 1.5)
   platforms?: string[];
+  multiplayer: boolean;
   reserved: boolean;
   createdAt: number;
   updatedAt: number;
@@ -84,6 +86,39 @@ class NextUpDB extends Dexie {
       board: "id",
       metadata: "key"
     });
+
+    this.version(5)
+      .stores({
+        games: "++id, title, pool, reserved, *platforms",
+        events: "++id, type, timestamp",
+        points: "++id, timestamp",
+        board: "id",
+        metadata: "key"
+      })
+      .upgrade(async (tx) => {
+        await tx.table("games").toCollection().modify((game: Partial<Game>) => {
+          game.multiplayer = Boolean(game.multiplayer);
+        });
+      });
+
+    this.version(6)
+      .stores({
+        games: "++id, title, pool, reserved, *platforms",
+        events: "++id, type, timestamp",
+        points: "++id, timestamp",
+        board: "id",
+        metadata: "key"
+      })
+      .upgrade(async (tx) => {
+        await tx.table("games").toCollection().modify((game: Partial<Game> & { pool?: string }) => {
+          game.multiplayer = Boolean(game.multiplayer);
+
+          if (game.pool !== "daily" && game.pool !== "weekly" && game.pool !== "none") {
+            game.reserved = game.pool === "reserve" ? true : Boolean(game.reserved);
+            game.pool = game.pool === "reserve" ? "none" : "daily";
+          }
+        });
+      });
   }
 }
 

@@ -1,15 +1,17 @@
-import { useEffect, useMemo, useState, type FormEvent } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { rollDailyGame } from "../domain/useCases/rollDailyGame";
 import { rollWeeklyGame } from "../domain/useCases/rollWeeklyGame";
 import { recordPlaySession } from "../domain/useCases/recordPlaySession";
+import { recordMultiplayerSession } from "../domain/useCases/recordMultiplayerSession";
 import { getBoardView, type BoardView } from "../domain/queries/getBoardView";
-import { addGameToLibrary, parsePlatformsInput } from "../domain/services/GameLibraryService";
-import { clearReserveGame, setReserveGame } from "../domain/services/BoardService";
+import { clearReserveGame, getCurrentBoard, setReserveGame } from "../domain/services/BoardService";
+import { evaluatePlayRules, getMultiplayerReward } from "../domain/rules/rulesEngine";
 import { getPointBalance } from "../database/repositories/pointRepository";
 import { getAllGames } from "../database/repositories/gameRepository";
-import type { Game, GamePool } from "../database/db";
+import type { Game } from "../database/db";
 import TransientToast from "../components/TransientToast";
+import { now } from "../core/clock";
 
 const EMPTY_SLOT = "—";
 const PLAYTIME_STEP_MINUTES = 15;
@@ -17,6 +19,8 @@ const MAX_PLAYTIME_MINUTES = 180;
 const PLAYTIME_REWARD_PER_15_MINUTES = 5;
 const DAILY_REROLL_COST = 5;
 const WEEKLY_REROLL_COST = 10;
+const RESERVE_MOVE_COST = 25;
+const MAX_MULTIPLAYER_PLAYERS = 10;
 
 type PlaySessionPool = "daily" | "weekly" | "reserve";
 
@@ -67,25 +71,33 @@ function getSessionOptions(view: BoardView | null): PlaySessionOption[] {
 export default function Board() {
   const [view, setView] = useState<BoardView | null>(null);
   const [balance, setBalance] = useState(0);
-  const [title, setTitle] = useState("");
-  const [pool, setPool] = useState<GamePool>("daily");
-  const [platformsInput, setPlatformsInput] = useState("");
   const [playSessionPool, setPlaySessionPool] = useState<PlaySessionPool | "">("");
   const [playtimeMinutes, setPlaytimeMinutes] = useState(0);
+  const [isMultiplayerLogging, setIsMultiplayerLogging] = useState(false);
+  const [multiplayerGameId, setMultiplayerGameId] = useState("");
+  const [playerCount, setPlayerCount] = useState(1);
   const [libraryGames, setLibraryGames] = useState<Game[]>([]);
   const [reserveSelection, setReserveSelection] = useState("");
   const [message, setMessage] = useState<string | null>(null);
-  const [isSaving, setIsSaving] = useState(false);
   const [isRecordingSession, setIsRecordingSession] = useState(false);
   const [isRollingDaily, setIsRollingDaily] = useState(false);
   const [isRollingWeekly, setIsRollingWeekly] = useState(false);
   const [isUpdatingReserve, setIsUpdatingReserve] = useState(false);
-  const [isFlyoutOpen, setIsFlyoutOpen] = useState(false);
   const [isPlayDialogOpen, setIsPlayDialogOpen] = useState(false);
+  const [projectedSessionReward, setProjectedSessionReward] = useState<number | null>(null);
 
   const sessionOptions = useMemo(() => getSessionOptions(view), [view]);
   const selectedSessionOption = sessionOptions.find((option) => option.pool === playSessionPool);
+  const multiplayerOptions = useMemo(
+    () => libraryGames
+      .filter((game) => game.multiplayer)
+      .sort((left, right) => left.title.localeCompare(right.title)),
+    [libraryGames]
+  );
+  const selectedMultiplayerGame = multiplayerOptions.find((game) => game.id?.toString() === multiplayerGameId);
   const playtimeBonus = getPlaytimeBonus(playtimeMinutes);
+  const projectedPoolBonus = projectedSessionReward === null ? null : Math.max(0, projectedSessionReward - playtimeBonus);
+  const multiplayerReward = getMultiplayerReward(playerCount);
   const dailyRerollCost = view?.dailyIsReroll ? DAILY_REROLL_COST : 0;
   const weeklyRerollCost = view?.weeklyIsReroll ? WEEKLY_REROLL_COST : 0;
 
@@ -122,6 +134,17 @@ export default function Board() {
   }, [playSessionPool, sessionOptions]);
 
   useEffect(() => {
+    if (multiplayerOptions.length === 0) {
+      setMultiplayerGameId("");
+      return;
+    }
+
+    if (!multiplayerOptions.some((game) => game.id?.toString() === multiplayerGameId)) {
+      setMultiplayerGameId(multiplayerOptions[0].id?.toString() ?? "");
+    }
+  }, [multiplayerGameId, multiplayerOptions]);
+
+  useEffect(() => {
     if (!message) {
       return;
     }
@@ -132,6 +155,42 @@ export default function Board() {
 
     return () => window.clearTimeout(timeoutId);
   }, [message]);
+
+  useEffect(() => {
+    if (!isPlayDialogOpen || isMultiplayerLogging) {
+      setProjectedSessionReward(null);
+      return;
+    }
+
+    if (!playSessionPool) {
+      setProjectedSessionReward(null);
+      return;
+    }
+
+    const normalizedMinutes = normalizePlaytimeMinutes(playtimeMinutes);
+
+    if (normalizedMinutes <= 0) {
+      setProjectedSessionReward(0);
+      return;
+    }
+
+    let isCancelled = false;
+
+    void (async () => {
+      const board = await getCurrentBoard();
+      const rules = await evaluatePlayRules(board, playSessionPool, now(), normalizedMinutes);
+
+      if (isCancelled) {
+        return;
+      }
+
+      setProjectedSessionReward(rules.allowed ? rules.reward : 0);
+    })();
+
+    return () => {
+      isCancelled = true;
+    };
+  }, [isMultiplayerLogging, isPlayDialogOpen, playSessionPool, playtimeMinutes]);
 
   async function handleDailyRoll() {
     setMessage(null);
@@ -149,7 +208,7 @@ export default function Board() {
 
       await refreshBoard();
       setMessage(
-        `${wasReroll ? "Rerolled" : "Rolled"} daily game: ${result.data.title}${rollCost > 0 ? ` (-${rollCost} points)` : " (free)"}.`
+        `${wasReroll ? "Rerolled" : "Rolled"} daily game: ${result.data.title}${rollCost > 0 ? ` (-♦${rollCost})` : " (free)"}.`
       );
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Daily roll could not be completed.");
@@ -174,7 +233,7 @@ export default function Board() {
 
       await refreshBoard();
       setMessage(
-        `${wasReroll ? "Rerolled" : "Rolled"} weekly game: ${result.data.title}${rollCost > 0 ? ` (-${rollCost} points)` : " (free)"}.`
+        `${wasReroll ? "Rerolled" : "Rolled"} weekly game: ${result.data.title}${rollCost > 0 ? ` (-♦${rollCost})` : " (free)"}.`
       );
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Weekly roll could not be completed.");
@@ -184,6 +243,38 @@ export default function Board() {
   }
 
   async function handleRecordSession() {
+    if (isMultiplayerLogging) {
+      const selectedGameId = Number(multiplayerGameId);
+
+      if (!selectedGameId) {
+        setMessage("Choose a multiplayer title before recording a session.");
+        return;
+      }
+
+      setMessage(null);
+      setIsRecordingSession(true);
+
+      try {
+        const result = await recordMultiplayerSession(selectedGameId, playerCount);
+
+        if (!result.success) {
+          setMessage(result.message ?? "Multiplayer session could not be recorded.");
+          return;
+        }
+
+        setPlayerCount(1);
+        setMessage(`Recorded multiplayer session for ${result.data.title} with ${result.data.playerCount} player${result.data.playerCount === 1 ? "" : "s"}: +♦${result.data.reward}.`);
+        setIsPlayDialogOpen(false);
+      } catch (error) {
+        setMessage(error instanceof Error ? error.message : "Could not record this multiplayer session.");
+      } finally {
+        setIsRecordingSession(false);
+        await refreshBoard();
+      }
+
+      return;
+    }
+
     if (!playSessionPool) {
       setMessage("Select an active game slot before recording a session.");
       return;
@@ -208,7 +299,7 @@ export default function Board() {
       }
 
       setPlaytimeMinutes(0);
-      setMessage(`Recorded ${result.data.playtimeMinutes} minutes for ${result.data.title}: +${result.data.reward} points.`);
+      setMessage(`Recorded ${result.data.playtimeMinutes} minutes for ${result.data.title}: +♦${result.data.reward}.`);
       setIsPlayDialogOpen(false);
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Could not record this play session.");
@@ -256,72 +347,35 @@ export default function Board() {
     }
   }
 
-  async function handleAddGame(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    setMessage(null);
-    setIsSaving(true);
-
-    try {
-      await addGameToLibrary(title, pool, parsePlatformsInput(platformsInput));
-      const addedTitle = title.trim();
-      setTitle("");
-      setPlatformsInput("");
-      setMessage(`Added "${addedTitle}" to the ${pool} pool.`);
-      setIsFlyoutOpen(false);
-      await refreshBoard();
-    } catch (error) {
-      setMessage(error instanceof Error ? error.message : "Could not add the game.");
-    } finally {
-      setIsSaving(false);
-    }
-  }
-
   return (
     <div className="mx-auto max-w-5xl space-y-6 px-4 py-8 text-white sm:px-6 lg:px-8">
       <div className="rounded-[32px] border border-white/10 bg-slate-950/80 p-6 shadow-[0_30px_80px_-40px_rgba(0,0,0,0.75)]">
-        <div className="flex flex-wrap items-center justify-between gap-4">
+        <div className="flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between">
           <div>
             <h1 className="text-3xl font-semibold tracking-tight text-accent">Board</h1>
             <p className="mt-2 max-w-2xl text-sm text-slate-300">
-              Pick the next game, manage your library, and keep your daily and weekly play state aligned.
+              Pick the next game and manage your library!
             </p>
           </div>
 
-          <div className="flex flex-wrap items-center gap-3">
-            <button
-              type="button"
-              onClick={() => setIsFlyoutOpen(true)}
-              className="rounded-full border border-white/10 bg-white/5 px-4 py-2 text-sm font-semibold text-white transition hover:border-accent/40 hover:bg-white/10"
-            >
-              Add a game
-            </button>
-            <Link
-              to="/library"
-              className="rounded-full border border-white/10 bg-white/5 px-4 py-2 text-sm font-semibold text-accent transition hover:border-accent/40 hover:bg-white/10"
-            >
-              View full library
-            </Link>
-          </div>
-        </div>
-      </div>
-
-      <div className="rounded-[32px] border border-white/10 bg-slate-950/80 p-6 shadow-[0_30px_80px_-40px_rgba(0,0,0,0.75)]">
-        <div className="flex flex-wrap items-center justify-between gap-4">
-          <div>
-            <p className="text-sm uppercase tracking-wide text-slate-400">Points balance</p>
-            <p className="mt-2 text-4xl font-semibold tracking-tight text-accent">{balance}</p>
-          </div>
-          <div className="flex items-center gap-3">
+          <div className="grid w-full gap-2 sm:grid-cols-3 lg:w-auto lg:min-w-[420px]">
+            <div className="flex min-h-[48px] items-center justify-end rounded-2xl border border-accent/20 bg-white/5 px-3 py-2 text-right">
+              <span className="text-xs uppercase tracking-wide text-slate-400">♦ Balance:</span>
+              <span className="ml-2 text-2xl font-semibold tracking-tight text-accent">♦{balance}</span>
+            </div>
             <button
               type="button"
               onClick={() => setIsPlayDialogOpen(true)}
-              className="rounded-full border border-accent/30 bg-accent/10 px-4 py-2 text-sm font-semibold text-accent transition hover:bg-accent/20"
+              className="flex min-h-[48px] items-center justify-center rounded-2xl border border-accent/30 bg-accent/10 px-3 py-2 text-sm font-semibold text-accent transition hover:bg-accent/20"
             >
               Record play
             </button>
-            <div className="rounded-3xl border border-accent/20 bg-white/5 px-4 py-3 text-sm text-slate-300">
-              Front-facing economy view
-            </div>
+            <Link
+              to="/library"
+              className="flex min-h-[48px] items-center justify-center rounded-2xl border border-white/10 bg-white/5 px-3 py-2 text-sm font-semibold text-accent transition hover:border-accent/40 hover:bg-white/10"
+            >
+              View full library
+            </Link>
           </div>
         </div>
       </div>
@@ -337,7 +391,7 @@ export default function Board() {
             {view?.dailyPlayed
               ? "Already marked played"
               : hasSelectedGame(view?.dailyTitle)
-                ? "Play today to earn points and keep progress moving."
+                ? "Play today to earn ♦ and keep progress moving."
                 : "Roll to choose today\'s game."}
           </p>
           <div className="mt-6 space-y-3">
@@ -347,12 +401,12 @@ export default function Board() {
                 disabled={isRollingDaily || view?.dailyPlayed}
                 className="rounded-full bg-accent px-5 py-3 text-sm font-semibold text-black transition disabled:cursor-not-allowed disabled:bg-white/10 disabled:text-slate-400"
               >
-                {isRollingDaily ? "Rolling..." : view?.dailyIsReroll ? "Reroll" : "Roll"}
+                {isRollingDaily ? "Rolling..." : view?.dailyIsReroll ? `Reroll (♦${DAILY_REROLL_COST})` : "Roll"}
               </button>
             </div>
             <p className={`text-xs ${dailyRerollCost > balance ? "text-red-300" : "text-slate-500"}`}>
               {view?.dailyIsReroll
-                ? `Reroll cost: ${DAILY_REROLL_COST} points${dailyRerollCost > balance ? " (insufficient balance)" : ""}.`
+                ? `${dailyRerollCost > balance ? "Insufficient balance for reroll." : "Reroll uses ♦ from your balance."}`
                 : "First daily roll each day is free."}
             </p>
           </div>
@@ -365,7 +419,7 @@ export default function Board() {
             {view?.weeklyPlayed
               ? "Already marked played"
               : hasSelectedGame(view?.weeklyTitle)
-                ? "Play this week to earn reward points."
+                ? "Play this week to earn ♦ rewards."
                 : "Roll to choose this week\'s game."}
           </p>
           <div className="mt-6 space-y-3">
@@ -375,12 +429,12 @@ export default function Board() {
                 disabled={isRollingWeekly || view?.weeklyPlayed}
                 className="rounded-full bg-accent px-5 py-3 text-sm font-semibold text-black transition disabled:cursor-not-allowed disabled:bg-white/10 disabled:text-slate-400"
               >
-                {isRollingWeekly ? "Rolling..." : view?.weeklyIsReroll ? "Reroll" : "Roll"}
+                {isRollingWeekly ? "Rolling..." : view?.weeklyIsReroll ? `Reroll (♦${WEEKLY_REROLL_COST})` : "Roll"}
               </button>
             </div>
             <p className={`text-xs ${weeklyRerollCost > balance ? "text-red-300" : "text-slate-500"}`}>
               {view?.weeklyIsReroll
-                ? `Reroll cost: ${WEEKLY_REROLL_COST} points${weeklyRerollCost > balance ? " (insufficient balance)" : ""}.`
+                ? `${weeklyRerollCost > balance ? "Insufficient balance for reroll." : "Reroll uses ♦ from your balance."}`
                 : "First weekly roll each week is free."}
             </p>
           </div>
@@ -423,7 +477,7 @@ export default function Board() {
               disabled={isUpdatingReserve || !reserveSelection}
               className="rounded-full bg-accent px-5 py-3 text-sm font-semibold text-black transition disabled:cursor-not-allowed disabled:opacity-60"
             >
-              {isUpdatingReserve ? "Saving..." : "Set reserve"}
+              {isUpdatingReserve ? "Saving..." : `Set reserve (♦${RESERVE_MOVE_COST})`}
             </button>
             <button
               type="button"
@@ -436,59 +490,6 @@ export default function Board() {
           </div>
         </div>
       </div>
-
-      {isFlyoutOpen ? (
-        <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-slate-950/80 px-4 py-6 backdrop-blur-sm">
-          <div className="w-full max-w-lg rounded-[32px] border border-white/10 bg-slate-950/95 p-6 shadow-[0_40px_120px_-60px_rgba(0,0,0,0.7)] z-[10000]">
-            <div className="flex items-center justify-between gap-4">
-              <div>
-                <h2 className="text-xl font-semibold">Add a game</h2>
-                <p className="mt-2 text-sm text-slate-400">Add a new title to the daily or weekly pool.</p>
-              </div>
-              <button
-                type="button"
-                onClick={() => setIsFlyoutOpen(false)}
-                className="rounded-full border border-white/10 bg-white/5 px-3 py-2 text-sm font-semibold text-white transition hover:border-accent/40 hover:bg-white/10"
-              >
-                Close
-              </button>
-            </div>
-
-            <form className="mt-6 space-y-4" onSubmit={handleAddGame}>
-              <input
-                value={title}
-                onChange={(event) => setTitle(event.target.value)}
-                className="w-full rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-white outline-none transition focus:border-accent focus:bg-white/10"
-                placeholder="Game title"
-                required
-              />
-              <select
-                value={pool}
-                onChange={(event) => setPool(event.target.value as GamePool)}
-                className="w-full rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-white outline-none transition focus:border-accent focus:bg-white/10"
-              >
-                <option value="daily">Daily pool</option>
-                <option value="weekly">Weekly pool</option>
-              </select>
-              <input
-                value={platformsInput}
-                onChange={(event) => setPlatformsInput(event.target.value)}
-                className="w-full rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-white outline-none transition focus:border-accent focus:bg-white/10"
-                placeholder="Platforms (e.g. Switch, PC, Steam Deck)"
-              />
-              <div className="flex justify-end">
-                <button
-                  type="submit"
-                  disabled={isSaving}
-                  className="rounded-full bg-accent px-5 py-3 text-sm font-semibold text-black transition disabled:cursor-not-allowed disabled:opacity-60"
-                >
-                  {isSaving ? "Saving..." : "Add game"}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      ) : null}
 
       {isPlayDialogOpen ? (
         <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-slate-950/80 px-4 py-6 backdrop-blur-sm">
@@ -510,6 +511,49 @@ export default function Board() {
             </div>
 
             <div className="mt-6 space-y-5">
+              <button
+                type="button"
+                role="switch"
+                aria-checked={isMultiplayerLogging}
+                onClick={() => setIsMultiplayerLogging((current) => !current)}
+                className="flex w-full items-center justify-between rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-white transition hover:border-accent/30 hover:bg-white/10"
+              >
+                <span>Log multiplayer session</span>
+                <span
+                  className={`relative inline-flex h-7 w-12 items-center rounded-full transition ${
+                    isMultiplayerLogging ? "bg-accent" : "bg-white/15"
+                  }`}
+                >
+                  <span
+                    className={`inline-block h-5 w-5 rounded-full bg-slate-950 transition ${
+                      isMultiplayerLogging ? "translate-x-6" : "translate-x-1"
+                    }`}
+                  />
+                </span>
+              </button>
+
+              {isMultiplayerLogging ? (
+                <label className="block space-y-2 text-sm text-slate-400">
+                  <span className="text-xs uppercase tracking-wide">Multiplayer title</span>
+                  <select
+                    value={multiplayerGameId}
+                    onChange={(event) => setMultiplayerGameId(event.target.value)}
+                    className="w-full rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-white outline-none transition focus:border-accent focus:bg-white/10"
+                  >
+                    {multiplayerOptions.length === 0 ? (
+                      <option value="">No multiplayer titles available</option>
+                    ) : (
+                      multiplayerOptions.map((game) => (
+                        <option key={game.id ?? game.title} value={game.id ?? ""}>
+                          {game.title}
+                        </option>
+                      ))
+                    )}
+                  </select>
+                </label>
+              ) : null}
+
+              {!isMultiplayerLogging ? (
               <label className="block space-y-2 text-sm text-slate-400">
                 <span className="text-xs uppercase tracking-wide">Played title</span>
                 <select
@@ -528,23 +572,50 @@ export default function Board() {
                   )}
                 </select>
               </label>
+              ) : null}
 
-              <div className="space-y-3">
-                <div className="flex items-center justify-between text-xs uppercase tracking-wide text-slate-400">
-                  <span>Playtime</span>
-                  <span>{playtimeMinutes} minutes</span>
+              {!isMultiplayerLogging ? (
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between text-xs uppercase tracking-wide text-slate-400">
+                    <span>Playtime</span>
+                    <span>{playtimeMinutes} minutes</span>
+                  </div>
+                  <input
+                    type="range"
+                    min="0"
+                    max={MAX_PLAYTIME_MINUTES}
+                    step={PLAYTIME_STEP_MINUTES}
+                    value={playtimeMinutes}
+                    onChange={(event) => setPlaytimeMinutes(normalizePlaytimeMinutes(Number(event.target.value)))}
+                    className="w-full accent-accent"
+                  />
+                  <p className="text-xs text-slate-500">Playtime bonus from this session: +♦{playtimeBonus}.</p>
+                  {playSessionPool === "daily" || playSessionPool === "weekly" ? (
+                    <p className="text-xs text-slate-500">{playSessionPool === "daily" ? "Daily" : "Weekly"} bonus from this session: +♦{projectedPoolBonus ?? 0}.</p>
+                  ) : null}
+                  <p className="text-xs text-slate-400">Total reward from this session: +♦{projectedSessionReward ?? 0}.</p>
                 </div>
-                <input
-                  type="range"
-                  min="0"
-                  max={MAX_PLAYTIME_MINUTES}
-                  step={PLAYTIME_STEP_MINUTES}
-                  value={playtimeMinutes}
-                  onChange={(event) => setPlaytimeMinutes(normalizePlaytimeMinutes(Number(event.target.value)))}
-                  className="w-full accent-accent"
-                />
-                <p className="text-xs text-slate-500">Playtime bonus from this session: +{playtimeBonus} points.</p>
-              </div>
+              ) : (
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between text-xs uppercase tracking-wide text-slate-400">
+                    <span>Player count</span>
+                    <span>{playerCount} player{playerCount === 1 ? "" : "s"}</span>
+                  </div>
+                  <input
+                    type="range"
+                    min="1"
+                    max={MAX_MULTIPLAYER_PLAYERS}
+                    step="1"
+                    value={playerCount}
+                    onChange={(event) => setPlayerCount(Math.max(1, Math.min(MAX_MULTIPLAYER_PLAYERS, Math.floor(Number(event.target.value) || 1))))}
+                    className="w-full accent-accent"
+                  />
+                  <p className="text-xs text-slate-500">Multiplayer reward from this session: +♦{multiplayerReward}.</p>
+                  {playerCount <= 1 ? (
+                    <p className="text-xs text-amber-300">At least 2 players are required to record a multiplayer session.</p>
+                  ) : null}
+                </div>
+              )}
             </div>
 
             <div className="mt-6 flex justify-end gap-3">
@@ -558,7 +629,7 @@ export default function Board() {
               <button
                 type="button"
                 onClick={handleRecordSession}
-                disabled={isRecordingSession || playtimeMinutes <= 0 || !selectedSessionOption}
+                disabled={isRecordingSession || (isMultiplayerLogging ? !selectedMultiplayerGame || playerCount <= 1 : playtimeMinutes <= 0 || !selectedSessionOption)}
                 className="rounded-full bg-accent px-5 py-3 text-sm font-semibold text-black transition disabled:cursor-not-allowed disabled:opacity-60"
               >
                 {isRecordingSession ? "Recording..." : "Record session"}

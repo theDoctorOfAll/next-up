@@ -1,10 +1,10 @@
-import { db, type Game } from "../db";
+import { db, type Game, type GamePool } from "../db";
 
 export async function getAllGames(): Promise<Game[]> {
     return db.games.toArray();
 }
 
-export async function getGamesByPool(pool: "daily" | "weekly"): Promise<Game[]> {
+export async function getGamesByPool(pool: GamePool): Promise<Game[]> {
     return db.games
         .where("pool")
         .equals(pool)

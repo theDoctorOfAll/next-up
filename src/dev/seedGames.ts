@@ -13,13 +13,13 @@ export async function seedGamesOnce() {
   seeded = true;
 
   // Add games without charging points during initial seed
-  await addGameInternal("Hades II", "daily", [], false);
-  await addGameInternal("Balatro", "daily", [], false);
-  await addGameInternal("Forza Horizon 5", "daily", [], false);
+  await addGameInternal("Hades II", "daily", [], false, false);
+  await addGameInternal("Balatro", "daily", [], false, false);
+  await addGameInternal("Forza Horizon 5", "daily", [], false, false);
 
-  await addGameInternal("Stardew Valley", "weekly", [], false);
-  await addGameInternal("Final Fantasy VII Remake", "weekly", [], false);
-  await addGameInternal("Star Wars Outlaws", "weekly", [], false);
+  await addGameInternal("Stardew Valley", "weekly", [], false, false);
+  await addGameInternal("Final Fantasy VII Remake", "weekly", [], false, false);
+  await addGameInternal("Star Wars Outlaws", "weekly", [], false, false);
 
   await markInitialLibrarySeeded();
 }

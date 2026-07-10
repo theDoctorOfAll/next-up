@@ -1,5 +1,5 @@
 import { now } from "../../core/clock";
-import { db, type Game, type GamePool } from "../../database/db";
+import { db, type ActiveGamePool, type Game, type GamePool } from "../../database/db";
 import {
   addGame,
   deleteGame,
@@ -22,6 +22,7 @@ export interface NewGameInput {
   title: string;
   pool: GamePool;
   weight?: number;
+  multiplayer?: boolean;
   reserved?: boolean;
 }
 
@@ -70,7 +71,7 @@ async function chargeLibraryCost(amount: number, reason: string, payload: Record
   const balance = await getPointBalance();
 
   if (balance < amount) {
-    throw new Error(`Not enough points. ${amount} points required.`);
+    throw new Error(`Not enough balance. ♦${amount} required.`);
   }
 
   await spendPoints(amount, reason);
@@ -84,15 +85,17 @@ async function chargeLibraryCost(amount: number, reason: string, payload: Record
 export async function addGameToLibrary(
   titleInput: string,
   poolInput: GamePool,
-  platformsInput: string[] = []
+  platformsInput: string[] = [],
+  multiplayerInput: boolean = false
 ): Promise<number> {
-  return addGameInternal(titleInput, poolInput, platformsInput, true);
+  return addGameInternal(titleInput, poolInput, platformsInput, multiplayerInput, true);
 }
 
 export async function addGameInternal(
   titleInput: string,
   poolInput: GamePool,
   platformsInput: string[] = [],
+  multiplayerInput: boolean = false,
   shouldCharge: boolean = true
 ): Promise<number> {
   assertValidPool(poolInput);
@@ -112,6 +115,7 @@ export async function addGameInternal(
         ...duplicate,
         title,
         pool: poolInput,
+        multiplayer: multiplayerInput,
         reserved: duplicate.pool !== poolInput ? false : duplicate.reserved
       });
 
@@ -119,6 +123,7 @@ export async function addGameInternal(
         id: duplicate.id,
         title,
         pool: poolInput,
+        multiplayer: multiplayerInput,
         reason: "Library add repaired existing game"
       });
     }
@@ -139,19 +144,20 @@ export async function addGameInternal(
     pool: poolInput,
     weight: 0,
     platforms: parsePlatformsInput(platformsInput.join(",")),
+    multiplayer: multiplayerInput,
     reserved: false,
     createdAt: now(),
     updatedAt: now()
   });
 
-  await recordEvent("GAME_CREATED", { id, title, pool: poolInput });
+  await recordEvent("GAME_CREATED", { id, title, pool: poolInput, multiplayer: multiplayerInput });
 
   return id;
 }
 
 export async function updateGameInLibrary(
   id: number,
-  updates: { title?: string; pool?: GamePool; weight?: number; platforms?: string[] }
+  updates: { title?: string; pool?: GamePool; weight?: number; platforms?: string[]; multiplayer?: boolean }
 ): Promise<Game> {
   const existing = await getGameByIdFromRepository(id);
 
@@ -168,10 +174,12 @@ export async function updateGameInLibrary(
   const nextPool = updates.pool ?? existing.pool;
   const nextWeight = normalizeWeight(updates.weight ?? existing.weight);
   const nextPlatforms = parsePlatformsInput((updates.platforms ?? existing.platforms ?? []).join(","));
+  const nextMultiplayer = updates.multiplayer ?? existing.multiplayer;
   const changedPool = nextPool !== existing.pool;
   const changedWeight = nextWeight !== existing.weight;
   const changedTitle = nextTitle !== existing.title;
   const changedPlatforms = JSON.stringify(nextPlatforms) !== JSON.stringify(existing.platforms ?? []);
+  const changedMultiplayer = nextMultiplayer !== existing.multiplayer;
 
   if (changedPool || changedWeight || changedTitle) {
     const totalCost = (changedPool ? CHANGE_POOL_COST : 0) + (changedWeight ? CHANGE_WEIGHT_COST : 0);
@@ -193,6 +201,7 @@ export async function updateGameInLibrary(
     pool: nextPool,
     weight: nextWeight,
     platforms: nextPlatforms,
+    multiplayer: nextMultiplayer,
     updatedAt: now()
   };
 
@@ -203,6 +212,7 @@ export async function updateGameInLibrary(
     pool: updatedGame.pool,
     weight: updatedGame.weight,
     platforms: updatedGame.platforms,
+    multiplayer: updatedGame.multiplayer,
     reason: "Library update"
   });
 
@@ -241,6 +251,7 @@ export async function adjustGameWeightInLibrary(
     pool: updatedGame.pool,
     weight: updatedGame.weight,
     platforms: updatedGame.platforms,
+    multiplayer: updatedGame.multiplayer,
     reason: `Weight ${direction}`
   });
 
@@ -291,7 +302,7 @@ export async function getGamesByPool(poolInput: GamePool): Promise<Game[]> {
   return getGamesByPoolFromRepository(poolInput);
 }
 
-export async function getEligibleGames(poolInput: GamePool): Promise<Game[]> {
+export async function getEligibleGames(poolInput: ActiveGamePool): Promise<Game[]> {
   const games = await getGamesByPool(poolInput);
 
   return games.filter((game) => !game.reserved);
@@ -306,7 +317,36 @@ export async function ensureGameIntegrity() {
       continue;
     }
 
-    assertValidPool(game.pool);
+    if (game.pool !== "daily" && game.pool !== "weekly" && game.pool !== "none") {
+      const repairedGame: Game = {
+        ...game,
+        pool: game.pool === "reserve" ? "none" : "daily",
+        reserved: game.pool === "reserve" ? true : Boolean(game.reserved),
+        multiplayer: Boolean(game.multiplayer),
+        updatedAt: now()
+      };
+
+      await updateGame(repairedGame);
+      await recordEvent("GAME_UPDATED", {
+        id: repairedGame.id,
+        title: repairedGame.title,
+        pool: repairedGame.pool,
+        reserved: repairedGame.reserved,
+        multiplayer: repairedGame.multiplayer,
+        reason: "Repaired invalid game pool during integrity check"
+      });
+
+      seenTitles.set(normalizeTitle(repairedGame.title), repairedGame);
+      continue;
+    }
+
+    if (typeof game.multiplayer !== "boolean") {
+      await updateGame({
+        ...game,
+        multiplayer: Boolean(game.multiplayer),
+        updatedAt: now()
+      });
+    }
 
     const normalizedTitle = normalizeTitle(game.title);
 

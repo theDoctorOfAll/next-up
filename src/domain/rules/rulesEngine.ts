@@ -1,6 +1,6 @@
-import { db, type BoardState, type GamePool } from "../../database/db.ts";
+import { db, type ActiveGamePool, type BoardState, type GamePool } from "../../database/db.ts";
 
-export type PlayPool = GamePool | "reserve";
+export type PlayPool = GamePool | "reserve" | "multiplayer";
 
 const DAILY_REROLL_COST = 5;
 const WEEKLY_REROLL_COST = 10;
@@ -11,6 +11,7 @@ const CHANGE_WEIGHT_COST = 15;
 const RESERVE_MOVE_COST = 25;
 const WEEKLY_PROGRESSION_REWARDS = [0, 5, 5, 10, 10, 15, 15];
 const PLAYTIME_REWARD_PER_15_MINUTES = 5;
+export const MULTIPLAYER_REWARD_PER_ADDITIONAL_PLAYER = 10;
 
 export interface RollRuleResult {
   allowed: boolean;
@@ -22,6 +23,11 @@ export interface PlayRuleResult {
   allowed: boolean;
   reward: number;
   reason?: string;
+}
+
+export function getMultiplayerReward(playerCount: number) {
+  const normalizedPlayerCount = Math.max(1, Math.min(10, Math.floor(playerCount)));
+  return Math.max(0, normalizedPlayerCount - 1) * MULTIPLAYER_REWARD_PER_ADDITIONAL_PLAYER;
 }
 
 function startOfLocalDay(timestamp: number) {
@@ -55,7 +61,7 @@ function isSameLocalWeek(left: number, right: number) {
 
 export async function evaluateRollRules(
   board: BoardState,
-  pool: GamePool,
+  pool: ActiveGamePool,
   timestamp: number
 ): Promise<RollRuleResult> {
   const previousRollAt =
@@ -94,7 +100,7 @@ export async function evaluateRollRules(
     return {
       allowed: false,
       cost,
-      reason: `Not enough points. ${cost} points required.`
+      reason: `Not enough balance. ♦${cost} required.`
     };
   }
 
@@ -110,6 +116,14 @@ export async function evaluatePlayRules(
   timestamp: number,
   playtimeMinutes: number = 0
 ): Promise<PlayRuleResult> {
+  if (pool === "multiplayer") {
+    return {
+      allowed: false,
+      reward: 0,
+      reason: "Use multiplayer session rules for multiplayer logging."
+    };
+  }
+
   const selectedGameId =
     pool === "daily"
       ? board.dailyGameId
@@ -162,6 +176,26 @@ export async function evaluatePlayRules(
   };
 }
 
+export async function evaluateMultiplayerPlayRules(
+  gameId: number | undefined,
+  playerCount: number = 1
+): Promise<PlayRuleResult> {
+  if (!gameId) {
+    return {
+      allowed: false,
+      reward: 0,
+      reason: "Choose a multiplayer game to record this session."
+    };
+  }
+
+  const normalizedPlayerCount = Math.max(1, Math.min(10, Math.floor(playerCount)));
+
+  return {
+    allowed: true,
+    reward: getMultiplayerReward(normalizedPlayerCount)
+  };
+}
+
 export async function getLibraryRuleCosts() {
   return {
     addGame: ADD_GAME_COST,
@@ -172,7 +206,7 @@ export async function getLibraryRuleCosts() {
 }
 
 export async function applyRollCost(
-  pool: GamePool,
+  pool: ActiveGamePool,
   cost: number,
   gameId: number
 ) {
@@ -196,7 +230,8 @@ export async function applyPlayReward(
   pool: PlayPool,
   gameId: number,
   reward: number = PLAY_REWARD,
-  playtimeMinutes: number = 0
+  playtimeMinutes: number = 0,
+  playerCount?: number
 ) {
   if (reward <= 0) {
     return;
@@ -209,6 +244,7 @@ export async function applyPlayReward(
     gameId,
     amount: reward,
     playtimeMinutes,
+    playerCount,
     reason: `${pool} play`
   });
 

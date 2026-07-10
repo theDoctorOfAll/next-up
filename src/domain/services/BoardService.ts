@@ -73,7 +73,7 @@ export async function setReserveGame(gameId: number): Promise<BoardState> {
     const balance = await getPointTotal();
 
     if (balance < RESERVE_MOVE_COST) {
-      throw new Error(`Not enough points. ${RESERVE_MOVE_COST} points required.`);
+      throw new Error(`Not enough balance. ♦${RESERVE_MOVE_COST} required.`);
     }
   }
 

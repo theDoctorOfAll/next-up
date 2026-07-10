@@ -86,8 +86,8 @@ function parsePlatforms(value: string) {
 function parsePool(value: string): GamePool {
   const pool = value.trim().toLocaleLowerCase();
 
-  if (pool !== "daily" && pool !== "weekly") {
-    throw new Error(`Invalid pool \"${value}\". Expected daily or weekly.`);
+  if (pool !== "daily" && pool !== "weekly" && pool !== "none") {
+    throw new Error(`Invalid pool \"${value}\". Expected daily, weekly, or none.`);
   }
 
   return pool;
@@ -130,16 +130,16 @@ export default function Settings() {
     try {
       await addPoints(100, "developer points");
       await refreshSettings();
-      setMessage("Added 100 developer points.");
+      setMessage("Added ♦100.");
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : "Could not add developer points.");
+      setMessage(error instanceof Error ? error.message : "Could not add developer ♦.");
     } finally {
       setIsGrantingPoints(false);
     }
   }
 
   async function handleReset() {
-    if (!window.confirm("Reset game history, board state, and points? This cannot be undone.")) {
+    if (!window.confirm("Reset game history, board state, and ♦ balance? This cannot be undone.")) {
       return;
     }
 
@@ -180,7 +180,7 @@ export default function Settings() {
 
     try {
       const games = await getAllGames();
-      const lines = ["title,pool,weight,platforms,reserved"];
+      const lines = ["title,pool,weight,platforms,multiplayer,reserved"];
 
       for (const game of games) {
         lines.push(
@@ -189,6 +189,7 @@ export default function Settings() {
             toCsvCell(game.pool),
             toCsvCell(String(game.weight ?? 0)),
             toCsvCell((game.platforms ?? []).join(";")),
+            toCsvCell(String(Boolean(game.multiplayer))),
             toCsvCell(String(Boolean(game.reserved)))
           ].join(",")
         );
@@ -231,10 +232,10 @@ export default function Settings() {
       }
 
       const header = rows[0].map((cell) => cell.trim().toLocaleLowerCase());
-      const requiredColumns = ["title", "pool", "weight", "platforms", "reserved"];
+      const requiredColumns = ["title", "pool", "weight", "platforms", "multiplayer", "reserved"];
 
       if (!requiredColumns.every((column) => header.includes(column))) {
-        throw new Error("CSV header must include: title,pool,weight,platforms,reserved");
+        throw new Error("CSV header must include: title,pool,weight,platforms,multiplayer,reserved");
       }
 
       const indexes = {
@@ -242,6 +243,7 @@ export default function Settings() {
         pool: header.indexOf("pool"),
         weight: header.indexOf("weight"),
         platforms: header.indexOf("platforms"),
+        multiplayer: header.indexOf("multiplayer"),
         reserved: header.indexOf("reserved")
       };
 
@@ -262,6 +264,7 @@ export default function Settings() {
         const weightValue = Number(row[indexes.weight] ?? "0");
         const weight = Number.isFinite(weightValue) ? Math.round(weightValue) : 0;
         const platforms = parsePlatforms(row[indexes.platforms] ?? "");
+        const multiplayer = parseBoolean(row[indexes.multiplayer] ?? "false");
         const reserved = parseBoolean(row[indexes.reserved] ?? "false");
         const normalized = normalizeTitle(title);
         const existing = existingByTitle.get(normalized);
@@ -273,6 +276,7 @@ export default function Settings() {
             pool,
             weight,
             platforms,
+            multiplayer,
             reserved,
             updatedAt: Date.now()
           };
@@ -288,6 +292,7 @@ export default function Settings() {
           pool,
           weight,
           platforms,
+          multiplayer,
           reserved,
           createdAt: Date.now(),
           updatedAt: Date.now()
@@ -325,7 +330,7 @@ export default function Settings() {
         <div className="flex flex-wrap items-center justify-between gap-4">
           <div>
             <p className="text-sm uppercase tracking-wide text-slate-400">Current balance</p>
-            <p className="mt-2 text-4xl font-semibold tracking-tight text-accent">{balance}</p>
+            <p className="mt-2 text-4xl font-semibold tracking-tight text-accent">♦{balance}</p>
           </div>
           <div className="flex flex-wrap gap-3">
             <button
@@ -334,7 +339,7 @@ export default function Settings() {
               disabled={isGrantingPoints}
               className="rounded-full border border-accent/30 bg-accent/10 px-5 py-3 text-sm font-semibold text-accent transition hover:border-accent/50 hover:bg-accent/20 disabled:cursor-not-allowed disabled:opacity-60"
             >
-              {isGrantingPoints ? "Adding..." : "Add 100 points"}
+              {isGrantingPoints ? "Adding..." : "Add ♦100"}
             </button>
             <button
               type="button"

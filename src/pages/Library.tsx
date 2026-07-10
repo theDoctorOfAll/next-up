@@ -1,13 +1,15 @@
 import { useEffect, useMemo, useState, type FormEvent } from "react";
 import { Link } from "react-router-dom";
 import { getAllGames } from "../database/repositories/gameRepository";
-import { adjustGameWeightInLibrary, deleteGameFromLibrary, getWeightValueFromSteps, parsePlatformsInput, updateGameInLibrary } from "../domain/services/GameLibraryService";
+import { addGameToLibrary, adjustGameWeightInLibrary, parsePlatformsInput, deleteGameFromLibrary, getWeightValueFromSteps, updateGameInLibrary } from "../domain/services/GameLibraryService";
+import { getLibraryRuleCosts } from "../domain/rules/rulesEngine";
 import type { Game, GamePool } from "../database/db";
 import TransientToast from "../components/TransientToast";
 
 const poolLabels: Record<GamePool, string> = {
   daily: "Daily pool",
   weekly: "Weekly pool",
+  none: "No pool",
 };
 
 export default function Library() {
@@ -15,10 +17,23 @@ export default function Library() {
   const [expandedGameId, setExpandedGameId] = useState<number | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [editingGame, setEditingGame] = useState<Game | null>(null);
+  const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
+  const [title, setTitle] = useState("");
+  const [pool, setPool] = useState<GamePool>("daily");
+  const [platformsInput, setPlatformsInput] = useState("");
+  const [isMultiplayer, setIsMultiplayer] = useState(false);
   const [editTitle, setEditTitle] = useState("");
   const [editPool, setEditPool] = useState<GamePool>("daily");
   const [editPlatforms, setEditPlatforms] = useState("");
+  const [editMultiplayer, setEditMultiplayer] = useState(false);
   const [isSavingEdit, setIsSavingEdit] = useState(false);
+  const [isSavingAdd, setIsSavingAdd] = useState(false);
+  const [costs, setCosts] = useState({
+    addGame: 500,
+    changePool: 10,
+    changeWeight: 15,
+    moveToReserve: 25
+  });
 
   async function refreshLibrary() {
     setGames(await getAllGames());
@@ -29,13 +44,36 @@ export default function Library() {
     setEditTitle(game.title);
     setEditPool(game.pool);
     setEditPlatforms((game.platforms ?? []).join(", "));
+    setEditMultiplayer(game.multiplayer);
     setMessage(null);
+  }
+
+  async function handleAddGame(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setMessage(null);
+    setIsSavingAdd(true);
+
+    try {
+      await addGameToLibrary(title, pool, parsePlatformsInput(platformsInput), isMultiplayer);
+      const addedTitle = title.trim();
+      setTitle("");
+      setPool("daily");
+      setPlatformsInput("");
+      setIsMultiplayer(false);
+      setIsAddDialogOpen(false);
+      await refreshLibrary();
+      setMessage(pool === "none" ? `Added "${addedTitle}" outside the active pools.` : `Added "${addedTitle}" to the ${pool} pool.`);
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Could not add the game.");
+    } finally {
+      setIsSavingAdd(false);
+    }
   }
 
   async function handleSaveEdit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
 
-    if (!editingGame?.id) {
+    if (!editingGame?.id || !hasPendingChanges) {
       return;
     }
 
@@ -46,7 +84,8 @@ export default function Library() {
       await updateGameInLibrary(editingGame.id, {
         title: editTitle,
         pool: editPool,
-        platforms: parsePlatformsInput(editPlatforms)
+        platforms: normalizedEditPlatforms,
+        multiplayer: editMultiplayer
       });
 
       await refreshLibrary();
@@ -103,6 +142,7 @@ export default function Library() {
 
   useEffect(() => {
     void refreshLibrary();
+    void getLibraryRuleCosts().then(setCosts);
   }, []);
 
   useEffect(() => {
@@ -125,7 +165,7 @@ export default function Library() {
           .sort((a, b) => a.title.localeCompare(b.title));
         return acc;
       },
-      { daily: [], weekly: [] },
+      { daily: [], weekly: [], none: [] },
     );
   }, [games]);
 
@@ -135,17 +175,52 @@ export default function Library() {
       .sort((a, b) => a.title.localeCompare(b.title));
   }, [games]);
 
+  const normalizedEditPlatforms = useMemo(
+    () => parsePlatformsInput(editPlatforms),
+    [editPlatforms]
+  );
+
+  const hasPendingChanges = useMemo(() => {
+    if (!editingGame) {
+      return false;
+    }
+
+    const normalizedCurrentPlatforms = parsePlatformsInput((editingGame.platforms ?? []).join(","));
+    const normalizedTitle = editTitle.trim().replace(/\s+/g, " ");
+
+    return (
+      normalizedTitle !== editingGame.title ||
+      editPool !== editingGame.pool ||
+      JSON.stringify(normalizedEditPlatforms) !== JSON.stringify(normalizedCurrentPlatforms) ||
+      editMultiplayer !== editingGame.multiplayer
+    );
+  }, [editMultiplayer, editPool, editTitle, editingGame, normalizedEditPlatforms]);
+
+  const hasPoolChanged = Boolean(editingGame && editPool !== editingGame.pool);
+
   return (
     <div className="space-y-6 text-white">
       <div className="flex items-center justify-between gap-3">
         <div>
           <h1 className="text-2xl font-bold text-accent">Library</h1>
-          <p className="mt-1 text-sm opacity-80">Browse the games in each RNG pool and open one for more detail.</p>
+          <p className="mt-1 text-sm opacity-80">Browse games in each RNG pool, or keep titles outside the active pools.</p>
         </div>
 
-        <Link to="/" className="rounded bg-accent px-3 py-2 text-sm font-semibold text-black">
-          Back to board
-        </Link>
+        <div className="flex items-center gap-3">
+          <button
+            type="button"
+            onClick={() => setIsAddDialogOpen(true)}
+            className="inline-flex h-12 items-center justify-center rounded-full border border-accent/30 bg-accent/10 px-5 text-sm font-semibold text-accent transition hover:border-accent/50 hover:bg-accent/20"
+          >
+            Add a game (♦{costs.addGame})
+          </button>
+          <Link
+            to="/"
+            className="inline-flex h-12 items-center justify-center rounded-full border border-white/10 bg-white/5 px-5 text-sm font-semibold text-white transition hover:border-accent/40 hover:bg-white/10"
+          >
+            Back to board
+          </Link>
+        </div>
       </div>
 
       <div className="rounded-[28px] border border-white/10 bg-slate-950/80 p-4 shadow-[0_30px_80px_-40px_rgba(0,0,0,0.75)] sm:p-6">
@@ -154,7 +229,7 @@ export default function Library() {
         </p>
 
         {games.length === 0 ? (
-          <p className="mt-4 text-sm text-slate-400">No games yet. Add one from the board.</p>
+          <p className="mt-4 text-sm text-slate-400">No games yet. Add one from the library.</p>
         ) : (
           <div className="mt-5 space-y-5">
             <section className="rounded-[24px] border border-accent/20 bg-accent/10 p-4">
@@ -185,13 +260,6 @@ export default function Library() {
                             className="rounded-full border border-white/10 px-2.5 py-1 text-xs font-semibold text-slate-200 transition hover:border-accent/40 hover:text-accent"
                           >
                             Edit
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => void handleDeleteGame(game)}
-                            className="rounded-full border border-white/10 px-2.5 py-1 text-xs font-semibold text-slate-200 transition hover:border-rose-400/40 hover:text-rose-300"
-                          >
-                            Delete
                           </button>
                           <span className="rounded-full border border-accent/20 px-2.5 py-1 text-xs uppercase tracking-wide text-accent">
                             Reserved
@@ -238,42 +306,13 @@ export default function Library() {
                                 type="button"
                                 onClick={(event) => {
                                   event.stopPropagation();
-                                  void handleAdjustWeight(game, "increase");
-                                }}
-                                className="rounded-full border border-accent/20 bg-accent/10 px-2.5 py-1 text-xs font-semibold text-accent transition hover:border-accent/40 hover:bg-accent/20"
-                              >
-                                Weight +
-                              </button>
-                              <button
-                                type="button"
-                                onClick={(event) => {
-                                  event.stopPropagation();
-                                  void handleAdjustWeight(game, "decrease");
-                                }}
-                                className="rounded-full border border-white/10 bg-white/5 px-2.5 py-1 text-xs font-semibold text-slate-200 transition hover:border-accent/40 hover:text-accent"
-                              >
-                                Weight -
-                              </button>
-                              <button
-                                type="button"
-                                onClick={(event) => {
-                                  event.stopPropagation();
                                   startEditing(game);
                                 }}
                                 className="rounded-full border border-white/10 px-2.5 py-1 text-xs font-semibold text-slate-200 transition hover:border-accent/40 hover:text-accent"
                               >
                                 Edit
                               </button>
-                              <button
-                                type="button"
-                                onClick={(event) => {
-                                  event.stopPropagation();
-                                  void handleDeleteGame(game);
-                                }}
-                                className="rounded-full border border-white/10 px-2.5 py-1 text-xs font-semibold text-slate-200 transition hover:border-rose-400/40 hover:text-rose-300"
-                              >
-                                Delete
-                              </button>
+                              
                               <span className="text-sm text-accent">{isExpanded ? "−" : "+"}</span>
                             </div>
                           </button>
@@ -292,6 +331,10 @@ export default function Library() {
                                 <div>
                                   <p className="text-slate-500">Platforms</p>
                                   <p className="font-medium text-white">{(game.platforms ?? []).join(", ") || "—"}</p>
+                                </div>
+                                <div>
+                                  <p className="text-slate-500">Multiplayer</p>
+                                  <p className="font-medium text-white">{game.multiplayer ? "Yes" : "No"}</p>
                                 </div>
                                 <div>
                                   <p className="text-slate-500">Reserved</p>
@@ -348,6 +391,7 @@ export default function Library() {
               >
                 <option value="daily">Daily pool</option>
                 <option value="weekly">Weekly pool</option>
+                <option value="none">No pool</option>
               </select>
               <input
                 value={editPlatforms}
@@ -355,6 +399,15 @@ export default function Library() {
                 className="w-full rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-white outline-none transition focus:border-accent focus:bg-white/10"
                 placeholder="Platforms (e.g. Switch, PC)"
               />
+              <label className="flex items-center gap-3 rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-white">
+                <input
+                  type="checkbox"
+                  checked={editMultiplayer}
+                  onChange={(event) => setEditMultiplayer(event.target.checked)}
+                  className="h-4 w-4 accent-accent"
+                />
+                <span>Multiplayer game</span>
+              </label>
               <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
                 <div className="flex flex-wrap items-center justify-between gap-3">
                   <div>
@@ -366,29 +419,104 @@ export default function Library() {
                       type="button"
                       onClick={() => void handleAdjustWeight(editingGame, "increase")}
                       disabled={isSavingEdit}
-                      className="rounded-full border border-accent/25 bg-accent/10 px-3 py-2 text-sm font-semibold text-accent transition hover:border-accent/40 hover:bg-accent/20 disabled:cursor-not-allowed disabled:opacity-60"
+                      className="rounded-full bg-accent px-3 py-2 text-sm font-semibold text-black transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60"
                     >
-                      Increase by 50%
+                      Increase by 50% (♦{costs.changeWeight})
                     </button>
                     <button
                       type="button"
                       onClick={() => void handleAdjustWeight(editingGame, "decrease")}
                       disabled={isSavingEdit}
-                      className="rounded-full border border-white/10 bg-white/5 px-3 py-2 text-sm font-semibold text-white transition hover:border-accent/40 hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-60"
+                      className="rounded-full bg-accent px-3 py-2 text-sm font-semibold text-black transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60"
                     >
-                      Decrease by 33%
+                      Decrease by 33% (♦{costs.changeWeight})
                     </button>
                   </div>
                 </div>
-                <p className="mt-2 text-sm text-slate-400">Each adjustment costs 15 points, and the minimum weight remains 1 via the step-based model.</p>
+                <p className="mt-2 text-sm text-slate-400">Minimum effective weight remains 1 via the step-based model.</p>
               </div>
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <button
+                  type="button"
+                  onClick={() => void handleDeleteGame(editingGame)}
+                  disabled={isSavingEdit}
+                  className="rounded-full border border-rose-400/30 bg-rose-500/10 px-5 py-3 text-sm font-semibold text-rose-300 transition hover:border-rose-400/50 hover:bg-rose-500/20 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  Delete game
+                </button>
+                <button
+                  type="submit"
+                  disabled={isSavingEdit || !hasPendingChanges}
+                  className="rounded-full bg-accent px-5 py-3 text-sm font-semibold text-black transition disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {isSavingEdit
+                    ? "Saving..."
+                    : hasPoolChanged
+                      ? `Save changes (pool: ♦${costs.changePool})`
+                      : "Save changes"}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      ) : null}
+
+      {isAddDialogOpen ? (
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-slate-950/80 px-4 py-6 backdrop-blur-sm">
+          <div className="w-full max-w-lg rounded-[32px] border border-white/10 bg-slate-950/95 p-6 shadow-[0_40px_120px_-60px_rgba(0,0,0,0.7)]">
+            <div className="flex items-center justify-between gap-4">
+              <div>
+                <h2 className="text-xl font-semibold">Add a game</h2>
+                <p className="mt-2 text-sm text-slate-400">Add a new title to the library.</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsAddDialogOpen(false)}
+                className="rounded-full border border-white/10 bg-white/5 px-3 py-2 text-sm font-semibold text-white transition hover:border-accent/40 hover:bg-white/10"
+              >
+                Close
+              </button>
+            </div>
+
+            <form className="mt-6 space-y-4" onSubmit={handleAddGame}>
+              <input
+                value={title}
+                onChange={(event) => setTitle(event.target.value)}
+                className="w-full rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-white outline-none transition focus:border-accent focus:bg-white/10"
+                placeholder="Game title"
+                required
+              />
+              <select
+                value={pool}
+                onChange={(event) => setPool(event.target.value as GamePool)}
+                className="w-full rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-white outline-none transition focus:border-accent focus:bg-white/10"
+              >
+                <option value="daily">Daily pool</option>
+                <option value="weekly">Weekly pool</option>
+                <option value="none">No pool</option>
+              </select>
+              <input
+                value={platformsInput}
+                onChange={(event) => setPlatformsInput(event.target.value)}
+                className="w-full rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-white outline-none transition focus:border-accent focus:bg-white/10"
+                placeholder="Platforms (e.g. Switch, PC, Steam Deck)"
+              />
+              <label className="flex items-center gap-3 rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-white">
+                <input
+                  type="checkbox"
+                  checked={isMultiplayer}
+                  onChange={(event) => setIsMultiplayer(event.target.checked)}
+                  className="h-4 w-4 accent-accent"
+                />
+                <span>Multiplayer game</span>
+              </label>
               <div className="flex justify-end">
                 <button
                   type="submit"
-                  disabled={isSavingEdit}
+                  disabled={isSavingAdd}
                   className="rounded-full bg-accent px-5 py-3 text-sm font-semibold text-black transition disabled:cursor-not-allowed disabled:opacity-60"
                 >
-                  {isSavingEdit ? "Saving..." : "Save changes"}
+                  {isSavingAdd ? "Saving..." : `Add game (♦${costs.addGame})`}
                 </button>
               </div>
             </form>

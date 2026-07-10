@@ -5,31 +5,40 @@ Next Up is a local-first Progressive Web App for managing a personal game librar
 ## What the app does
 
 - selects a daily game and a weekly game from curated pools
-- lets players mark games as played and earn points
-- supports playtime input in 30-minute blocks and rewards longer sessions
+- lets players record daily, weekly, and reserve play sessions and earn points
+- lets players record multiplayer sessions for any multiplayer-tagged title
+- supports playtime input in 15-minute increments and rewards longer sessions
 - enforces reroll costs and period-based lock logic
 - supports a reserve slot with a 25-point move cost
 - keeps reserved games out of the active pools and shows them in a dedicated library section
 - supports per-game platform tagging for later filtering and discovery
+- supports a per-game multiplayer flag in library metadata
 - includes settings tools for reset, developer point grants, and library CSV import/export
 - provides event-history and statistics views for the current economy state
+- installs as a Progressive Web App with a generated service worker and offline-ready asset caching
+- switches to a collapsible overlay sidebar on mobile-like aspect ratios
+- shows transient bottom-of-screen toast dialogs for status feedback
 
 ## Current status
 
 Implemented features include:
 
 - daily and weekly roll flow with rule evaluation
-- play recording and reward-based point earning
+- unified play-session recording for daily, weekly, and reserve slots
 - reroll cost enforcement and point spending
 - reserve-slot UI and board-state updates
 - pool-based library browsing with expandable details
 - reserved-game grouping in the library
 - weight adjustments with step-based values and costed actions
-- platform tagging on games and library editing
-- playtime-aware scoring with 30-minute playtime units
+- platform tagging and multiplayer metadata on games and library editing
+- playtime-aware scoring with 15-minute reward units
+- multiplayer session logging with player-count-based rewards
 - settings page tools for reset, CSV export/import, and developer point grants
 - event log and stats pages
 - route-based navigation for board, library, events, and stats
+- installable PWA output with generated manifest and service worker
+- responsive app shell with desktop rail and mobile overlay drawer
+- transient toast-based interaction feedback
 
 ## Project documentation
 
@@ -59,6 +68,16 @@ Build for production:
 ```bash
 npm run build
 ```
+
+Preview the production PWA locally:
+
+```bash
+npm run preview
+```
+
+To verify installability, open the preview build in a Chromium-based browser and inspect the Application panel for the active service worker and manifest.
+
+Library CSV files currently use the columns `title,pool,weight,platforms,multiplayer,reserved`.
 
 ## Near-term focus
 

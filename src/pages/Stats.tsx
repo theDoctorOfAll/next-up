@@ -44,7 +44,7 @@ export default function Stats() {
             <div className="mt-4 space-y-3 text-sm text-slate-300">
               <div className="flex items-center justify-between rounded-2xl border border-white/10 bg-white/5 px-4 py-3">
                 <span>Current balance</span>
-                <span className="font-semibold text-accent">{stats.totalPoints}</span>
+                <span className="font-semibold text-accent">♦{stats.totalPoints}</span>
               </div>
               <div className="flex items-center justify-between rounded-2xl border border-white/10 bg-white/5 px-4 py-3">
                 <span>Daily rolls</span>
