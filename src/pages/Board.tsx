@@ -349,7 +349,7 @@ export default function Board() {
 
   return (
     <div className="mx-auto max-w-5xl space-y-6 px-4 py-8 text-white sm:px-6 lg:px-8">
-      <div className="rounded-[32px] border border-white/10 bg-slate-950/80 p-6 shadow-[0_30px_80px_-40px_rgba(0,0,0,0.75)]">
+      <div className="rounded-[32px] border border-white/20 bg-slate-900/85 p-6 shadow-[0_35px_100px_-45px_rgba(0,0,0,0.9)]">
         <div className="flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between">
           <div>
             <h1 className="text-3xl font-semibold tracking-tight text-accent">Board</h1>
@@ -384,7 +384,7 @@ export default function Board() {
         className="grid gap-5 md:grid-cols-2"
         style={{ gridTemplateColumns: "repeat(2, minmax(0, 1fr))" }}
       >
-        <div className="rounded-[32px] border border-white/10 bg-slate-950/80 p-6 shadow-[0_30px_80px_-40px_rgba(0,0,0,0.75)]">
+        <div className="rounded-[32px] border border-white/20 bg-slate-900/85 p-6 shadow-[0_35px_100px_-45px_rgba(0,0,0,0.9)]">
           <h2 className="text-xl font-semibold">Daily Game</h2>
           <p className="mt-4 text-2xl font-semibold text-white">{view?.dailyTitle ?? EMPTY_SLOT}</p>
           <p className="mt-3 max-w-sm text-sm text-slate-400">
@@ -412,7 +412,7 @@ export default function Board() {
           </div>
         </div>
 
-        <div className="rounded-[32px] border border-white/10 bg-slate-950/80 p-6 shadow-[0_30px_80px_-40px_rgba(0,0,0,0.75)]">
+        <div className="rounded-[32px] border border-white/20 bg-slate-900/85 p-6 shadow-[0_35px_100px_-45px_rgba(0,0,0,0.9)]">
           <h2 className="text-xl font-semibold">Weekly Game</h2>
           <p className="mt-4 text-2xl font-semibold text-white">{view?.weeklyTitle ?? EMPTY_SLOT}</p>
           <p className="mt-3 max-w-sm text-sm text-slate-400">
@@ -441,7 +441,7 @@ export default function Board() {
         </div>
       </div>
 
-      <div className="rounded-[32px] border border-white/10 bg-slate-950/80 p-6 shadow-[0_30px_80px_-40px_rgba(0,0,0,0.75)]">
+      <div className="rounded-[32px] border border-white/20 bg-slate-900/85 p-6 shadow-[0_35px_100px_-45px_rgba(0,0,0,0.9)]">
         <div className="flex flex-wrap items-center justify-between gap-4">
           <div>
             <h2 className="text-xl font-semibold">Reserve slot</h2>
@@ -643,3 +643,4 @@ export default function Board() {
     </div>
   );
 }
+

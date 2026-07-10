@@ -3,11 +3,15 @@ import ReactDOM from "react-dom/client";
 import { BrowserRouter } from "react-router-dom";
 import { registerSW } from "virtual:pwa-register";
 import App from "./App";
+import { initializeRuntimePreferences, registerConsoleToggles } from "./core/runtimePreferences";
 import "./styles/globals.css";
 
 registerSW({
   immediate: true
 });
+
+initializeRuntimePreferences();
+registerConsoleToggles();
 
 ReactDOM.createRoot(document.getElementById("root")!).render(
   <React.StrictMode>

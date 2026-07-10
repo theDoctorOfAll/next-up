@@ -11,7 +11,7 @@ export default function Stats() {
 
   return (
     <div className="mx-auto max-w-5xl space-y-6 px-4 py-8 text-white sm:px-6 lg:px-8">
-      <div className="rounded-[32px] border border-white/10 bg-slate-950/80 p-6 shadow-[0_30px_80px_-40px_rgba(0,0,0,0.75)]">
+      <div className="rounded-[32px] border border-white/20 bg-slate-900/85 p-6 shadow-[0_35px_100px_-45px_rgba(0,0,0,0.9)]">
         <div className="flex flex-wrap items-center justify-between gap-4">
           <div>
             <h1 className="text-3xl font-semibold tracking-tight text-accent">Statistics</h1>
@@ -25,7 +25,7 @@ export default function Stats() {
 
       {stats ? (
         <div className="grid gap-5 md:grid-cols-2">
-          <div className="rounded-[32px] border border-white/10 bg-slate-950/80 p-6 shadow-[0_30px_80px_-40px_rgba(0,0,0,0.75)]">
+          <div className="rounded-[32px] border border-white/20 bg-slate-900/85 p-6 shadow-[0_35px_100px_-45px_rgba(0,0,0,0.9)]">
             <h2 className="text-xl font-semibold">Library</h2>
             <div className="mt-4 space-y-3 text-sm text-slate-300">
               <div className="flex items-center justify-between rounded-2xl border border-white/10 bg-white/5 px-4 py-3">
@@ -39,7 +39,7 @@ export default function Stats() {
             </div>
           </div>
 
-          <div className="rounded-[32px] border border-white/10 bg-slate-950/80 p-6 shadow-[0_30px_80px_-40px_rgba(0,0,0,0.75)]">
+          <div className="rounded-[32px] border border-white/20 bg-slate-900/85 p-6 shadow-[0_35px_100px_-45px_rgba(0,0,0,0.9)]">
             <h2 className="text-xl font-semibold">Economy</h2>
             <div className="mt-4 space-y-3 text-sm text-slate-300">
               <div className="flex items-center justify-between rounded-2xl border border-white/10 bg-white/5 px-4 py-3">
@@ -69,3 +69,4 @@ export default function Stats() {
     </div>
   );
 }
+

@@ -5,6 +5,7 @@ import { getPointBalance } from "../database/repositories/pointRepository";
 import { addGame, getAllGames, updateGame } from "../database/repositories/gameRepository";
 import type { Game, GamePool } from "../database/db";
 import { advanceClockByDays, getClockOffsetMs } from "../core/clock";
+import { isDeveloperModeEnabled, isHighContrastModeEnabled, setHighContrastModeEnabled } from "../core/runtimePreferences";
 import TransientToast from "../components/TransientToast";
 
 function normalizeTitle(value: string) {
@@ -101,6 +102,8 @@ export default function Settings() {
   const [isJumpingDay, setIsJumpingDay] = useState(false);
   const [isExportingLibrary, setIsExportingLibrary] = useState(false);
   const [isImportingLibrary, setIsImportingLibrary] = useState(false);
+  const [isHighContrastMode, setIsHighContrastMode] = useState(() => isHighContrastModeEnabled());
+  const [isDeveloperMode] = useState(() => isDeveloperModeEnabled());
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   async function refreshSettings() {
@@ -122,6 +125,10 @@ export default function Settings() {
 
     return () => window.clearTimeout(timeoutId);
   }, [message]);
+
+  useEffect(() => {
+    setHighContrastModeEnabled(isHighContrastMode);
+  }, [isHighContrastMode]);
 
   async function handleGrantPoints() {
     setIsGrantingPoints(true);
@@ -314,11 +321,11 @@ export default function Settings() {
 
   return (
     <div className="mx-auto max-w-4xl space-y-6 px-4 py-8 text-white sm:px-6 lg:px-8">
-      <div className="rounded-[32px] border border-white/10 bg-slate-950/80 p-6 shadow-[0_30px_80px_-40px_rgba(0,0,0,0.75)]">
+      <div className="rounded-[32px] border border-white/20 bg-slate-900/85 p-6 shadow-[0_35px_100px_-45px_rgba(0,0,0,0.9)]">
         <div className="flex flex-wrap items-center justify-between gap-4">
           <div>
             <h1 className="text-3xl font-semibold tracking-tight text-accent">Settings</h1>
-            <p className="mt-2 text-sm text-slate-300">Manage local app state and reset the current board economy safely.</p>
+            <p className="mt-2 text-sm text-slate-300">Manage local app state and handle accessibility.</p>
           </div>
           <Link to="/" className="rounded-full border border-white/10 bg-white/5 px-4 py-2 text-sm font-semibold text-accent transition hover:border-accent/40 hover:bg-white/10">
             Back to board
@@ -326,42 +333,67 @@ export default function Settings() {
         </div>
       </div>
 
-      <div className="rounded-[32px] border border-white/10 bg-slate-950/80 p-6 shadow-[0_30px_80px_-40px_rgba(0,0,0,0.75)]">
+      <div className="rounded-[32px] border border-white/20 bg-slate-900/85 p-6 shadow-[0_35px_100px_-45px_rgba(0,0,0,0.9)]">
         <div className="flex flex-wrap items-center justify-between gap-4">
           <div>
             <p className="text-sm uppercase tracking-wide text-slate-400">Current balance</p>
             <p className="mt-2 text-4xl font-semibold tracking-tight text-accent">♦{balance}</p>
           </div>
           <div className="flex flex-wrap gap-3">
-            <button
-              type="button"
-              onClick={() => void handleGrantPoints()}
-              disabled={isGrantingPoints}
-              className="rounded-full border border-accent/30 bg-accent/10 px-5 py-3 text-sm font-semibold text-accent transition hover:border-accent/50 hover:bg-accent/20 disabled:cursor-not-allowed disabled:opacity-60"
-            >
-              {isGrantingPoints ? "Adding..." : "Add ♦100"}
-            </button>
-            <button
-              type="button"
-              onClick={() => void handleJumpToNextDay()}
-              disabled={isJumpingDay}
-              className="rounded-full border border-indigo-400/30 bg-indigo-500/10 px-5 py-3 text-sm font-semibold text-indigo-300 transition hover:border-indigo-400/50 hover:bg-indigo-500/20 disabled:cursor-not-allowed disabled:opacity-60"
-            >
-              {isJumpingDay ? "Jumping..." : "Jump to next day"}
-            </button>
-            <button
-              type="button"
-              onClick={() => void handleReset()}
-              disabled={isResetting}
-              className="rounded-full border border-rose-400/30 bg-rose-500/10 px-5 py-3 text-sm font-semibold text-rose-300 transition hover:border-rose-400/50 hover:bg-rose-500/20 disabled:cursor-not-allowed disabled:opacity-60"
-            >
-              {isResetting ? "Resetting..." : "Reset local state"}
-            </button>
+            {isDeveloperMode ? (
+              <>
+                <button
+                  type="button"
+                  onClick={() => void handleGrantPoints()}
+                  disabled={isGrantingPoints}
+                  className="rounded-full border border-accent/30 bg-accent/10 px-5 py-3 text-sm font-semibold text-accent transition hover:border-accent/50 hover:bg-accent/20 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {isGrantingPoints ? "Adding..." : "Add ♦100"}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void handleJumpToNextDay()}
+                  disabled={isJumpingDay}
+                  className="rounded-full border border-indigo-400/30 bg-indigo-500/10 px-5 py-3 text-sm font-semibold text-indigo-300 transition hover:border-indigo-400/50 hover:bg-indigo-500/20 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {isJumpingDay ? "Jumping..." : "Jump to next day"}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void handleReset()}
+                  disabled={isResetting}
+                  className="rounded-full border border-rose-400/30 bg-rose-500/10 px-5 py-3 text-sm font-semibold text-rose-300 transition hover:border-rose-400/50 hover:bg-rose-500/20 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {isResetting ? "Resetting..." : "Reset local state"}
+                </button>
+              </>
+            ) : null}
           </div>
         </div>
       </div>
 
-      <div className="rounded-[32px] border border-white/10 bg-slate-950/80 p-6 shadow-[0_30px_80px_-40px_rgba(0,0,0,0.75)]">
+      <div className="rounded-[32px] border border-white/20 bg-slate-900/85 p-6 shadow-[0_35px_100px_-45px_rgba(0,0,0,0.9)]">
+        <div className="flex flex-wrap items-center justify-between gap-4">
+          <div>
+            <h2 className="text-xl font-semibold tracking-tight text-accent">Accessibility</h2>
+            <p className="mt-2 text-sm text-slate-300">Enable high-contrast rendering for stronger visual separation.</p>
+          </div>
+          <button
+            type="button"
+            role="switch"
+            aria-checked={isHighContrastMode}
+            onClick={() => setIsHighContrastMode((current) => !current)}
+            className="flex items-center gap-3 rounded-full border border-white/10 bg-white/5 px-4 py-2 text-sm font-semibold text-white transition hover:border-accent/40 hover:bg-white/10"
+          >
+            <span>{isHighContrastMode ? "High contrast on" : "High contrast off"}</span>
+            <span className={`relative inline-flex h-6 w-11 items-center rounded-full transition ${isHighContrastMode ? "bg-accent" : "bg-white/15"}`}>
+              <span className={`inline-block h-4 w-4 rounded-full bg-slate-950 transition ${isHighContrastMode ? "translate-x-6" : "translate-x-1"}`} />
+            </span>
+          </button>
+        </div>
+      </div>
+
+      <div className="rounded-[32px] border border-white/20 bg-slate-900/85 p-6 shadow-[0_35px_100px_-45px_rgba(0,0,0,0.9)]">
         <div className="space-y-4">
           <div>
             <h2 className="text-xl font-semibold tracking-tight text-accent">Library CSV</h2>
@@ -404,3 +436,4 @@ export default function Settings() {
     </div>
   );
 }
+

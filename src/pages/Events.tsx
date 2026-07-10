@@ -20,7 +20,7 @@ export default function Events() {
 
   return (
     <div className="mx-auto max-w-5xl space-y-6 px-4 py-8 text-white sm:px-6 lg:px-8">
-      <div className="rounded-[32px] border border-white/10 bg-slate-950/80 p-6 shadow-[0_30px_80px_-40px_rgba(0,0,0,0.75)]">
+      <div className="rounded-[32px] border border-white/20 bg-slate-900/85 p-6 shadow-[0_35px_100px_-45px_rgba(0,0,0,0.9)]">
         <div className="flex flex-wrap items-center justify-between gap-4">
           <div>
             <h1 className="text-3xl font-semibold tracking-tight text-accent">Event Log</h1>
@@ -32,7 +32,7 @@ export default function Events() {
         </div>
       </div>
 
-      <div className="rounded-[32px] border border-white/10 bg-slate-950/80 p-6 shadow-[0_30px_80px_-40px_rgba(0,0,0,0.75)]">
+      <div className="rounded-[32px] border border-white/20 bg-slate-900/85 p-6 shadow-[0_35px_100px_-45px_rgba(0,0,0,0.9)]">
         {events.length === 0 ? (
           <p className="text-sm text-slate-400">No events yet.</p>
         ) : (
@@ -59,3 +59,4 @@ export default function Events() {
     </div>
   );
 }
+

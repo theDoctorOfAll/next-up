@@ -1,11 +1,12 @@
 import { useEffect, useState } from "react";
+import { isDeveloperModeEnabled } from "../core/runtimePreferences";
 import { ensureGameIntegrity } from "../domain/services/GameLibraryService";
 
 let initializationPromise: Promise<void> | undefined;
 let initStarted = false;
 
 async function initializeAppData() {
-  if (import.meta.env.DEV) {
+  if (import.meta.env.DEV && isDeveloperModeEnabled()) {
     const { seedGamesOnce } = await import("../dev/seedGames");
 
     await seedGamesOnce();

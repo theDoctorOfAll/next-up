@@ -37,3 +37,26 @@ select optgroup {
   background-color: #0f172a;
   color: #f8fafc;
 }
+
+html[data-contrast="high"] {
+  color-scheme: dark;
+}
+
+html[data-contrast="high"] body {
+  background: #000;
+  color: #fff;
+  filter: brightness(1.1) contrast(1.2) saturate(1.08);
+}
+
+html[data-contrast="high"] :focus-visible {
+  outline: 2px solid #facc15;
+  outline-offset: 2px;
+}
+
+html[data-contrast="high"] button,
+html[data-contrast="high"] input,
+html[data-contrast="high"] select,
+html[data-contrast="high"] textarea,
+html[data-contrast="high"] a {
+  border-color: rgba(255, 255, 255, 0.65);
+}

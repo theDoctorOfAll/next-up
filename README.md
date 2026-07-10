@@ -79,6 +79,24 @@ To verify installability, open the preview build in a Chromium-based browser and
 
 Library CSV files currently use the columns `title,pool,weight,platforms,multiplayer,reserved`.
 
+### Developer mode and runtime toggles
+
+Developer mode is disabled by default. In development, you can re-enable developer-only tools (such as reset/dev point controls and initial dev seeding) from the browser console:
+
+```js
+window.nextUp?.setDeveloperMode(true)
+```
+
+Then reload the app to apply initialization-time behavior.
+
+Useful runtime commands:
+
+- `window.nextUp?.getDeveloperMode()`
+- `window.nextUp?.setDeveloperMode(false)`
+- `window.nextUp?.setHighContrastMode(true)`
+- `window.nextUp?.setHighContrastMode(false)`
+- `window.nextUp?.getHighContrastMode()`
+
 ## Near-term focus
 
 - polish empty states and interaction feedback
