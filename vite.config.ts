@@ -2,8 +2,26 @@ import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import { VitePWA } from 'vite-plugin-pwa'
 
+function getGithubPagesBase() {
+  if (!process.env.GITHUB_ACTIONS) {
+    return '/'
+  }
+
+  const repository = process.env.GITHUB_REPOSITORY ?? ''
+  const repoName = repository.split('/')[1] ?? ''
+
+  if (!repoName || repoName.endsWith('.github.io')) {
+    return '/'
+  }
+
+  return `/${repoName}/`
+}
+
+const base = getGithubPagesBase()
+
 // https://vite.dev/config/
 export default defineConfig({
+  base,
   plugins: [
     react(),
     VitePWA({
@@ -16,17 +34,17 @@ export default defineConfig({
         theme_color: '#0b0f17',
         background_color: '#0b0f17',
         display: 'standalone',
-        start_url: '/',
-        scope: '/',
+        start_url: base,
+        scope: base,
         icons: [
           {
-            src: '/pwa-192.svg',
+            src: `${base}pwa-192.svg`,
             sizes: '192x192',
             type: 'image/svg+xml',
             purpose: 'any maskable'
           },
           {
-            src: '/pwa-512.svg',
+            src: `${base}pwa-512.svg`,
             sizes: '512x512',
             type: 'image/svg+xml',
             purpose: 'any maskable'
