@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Routes, Route, Link } from "react-router-dom";
+import { Routes, Route, Link, Navigate } from "react-router-dom";
 import Board from "./pages/Board";
 import Library from "./pages/Library";
 import Events from "./pages/Events";
@@ -101,6 +101,7 @@ export default function App() {
           <main className="flex-1 p-8 sm:p-10">
             <Routes>
               <Route path="/" element={<Board />} />
+              <Route path="/next-up" element={<Navigate to="/" replace />} />
               <Route path="/library" element={<Library />} />
               <Route path="/events" element={<Events />} />
               <Route path="/stats" element={<Stats />} />
@@ -160,6 +161,7 @@ export default function App() {
           <main className="p-6 pt-20 sm:p-8 sm:pt-24">
             <Routes>
               <Route path="/" element={<Board />} />
+              <Route path="/next-up" element={<Navigate to="/" replace />} />
               <Route path="/library" element={<Library />} />
               <Route path="/events" element={<Events />} />
               <Route path="/stats" element={<Stats />} />
