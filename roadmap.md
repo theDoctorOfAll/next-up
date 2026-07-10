@@ -2,7 +2,9 @@
 
 ## Current status
 
-The project has moved beyond the prototype stage and now includes a working board loop, persistent economy state, reserve management, and dedicated visibility pages. The current focus is refinement, polish, and reliability rather than foundational plumbing.
+The current release is considered feature-complete.
+
+The app includes the full intended core loop (board, library, reserve, economy, event visibility, stats, CSV portability, and PWA installability). New development is now driven by real user feedback rather than pre-planned feature phases.
 
 ## Completed milestones
 
@@ -78,20 +80,21 @@ Delivered:
 - reroll cost feedback on board cards
 - reroll behavior that avoids reselecting the same title when alternatives exist
 
-## Near-term priorities
+## Post-release operating model
 
-### Phase 9 — Polish and hardening
+### Feedback-first development
 
-Planned work:
-- refine empty states and interaction feedback
-- add platform-based filtering and search
-- add backup or export-friendly flows
+Future work is selected from observed usage and user-reported needs.
 
-### Phase 10 — Testing and release readiness
+Priority order:
 
-Planned work:
-- rules-engine tests
-- board-service tests
-- library-service tests
-- manual QA checklist
-- final production verification
+1. correctness and data safety
+2. accessibility and UX clarity
+3. performance and installability reliability
+4. net-new features justified by repeated feedback
+
+### Expected cadence
+
+- small, low-risk quality updates
+- targeted bug-fix releases
+- occasional feature additions only when validated by demand

@@ -97,9 +97,23 @@ Useful runtime commands:
 - `window.nextUp?.setHighContrastMode(false)`
 - `window.nextUp?.getHighContrastMode()`
 
-## Near-term focus
+## Release status
 
-- polish empty states and interaction feedback
-- add platform-based filtering and search
-- expand settings and reset controls
-- add automated tests around rules and board services
+Next Up is currently considered feature-complete for this release.
+
+The active product strategy has shifted from feature delivery to maintenance and refinement:
+
+- keep the current loop stable and reliable
+- prioritize bug fixes and quality-of-life improvements
+- evaluate new features only when recurring user feedback identifies clear value
+
+## Post-release development policy
+
+Further development will be feedback-driven.
+
+Planned changes should generally meet at least one of these criteria:
+
+- resolves a confirmed bug or regression
+- improves accessibility, clarity, or usability
+- reduces operational risk (data integrity, installability, portability)
+- addresses repeated user requests with clear product impact

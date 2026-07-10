@@ -91,4 +91,13 @@ The app shell is built for installability. Vite generates the service worker and
 
 ## Current architectural direction
 
-The project is now centered on a rule-driven local game economy rather than a simple prototype experience. The main architectural goal is to keep state transitions inside domain services and rules logic rather than spreading them across the UI and database calls.
+The project is now in a stabilization phase after reaching a feature-complete release.
+
+Primary architectural intent going forward:
+
+- preserve the current domain boundaries and data model
+- keep state transitions concentrated in domain services and rule logic
+- avoid broad structural rewrites unless reliability or maintainability requires them
+- implement incremental changes based on observed user feedback
+
+In practice, architecture changes should be evolutionary, not foundational, unless critical issues are discovered in production usage.

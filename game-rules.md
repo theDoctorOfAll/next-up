@@ -1,5 +1,15 @@
 # Game Rules
 
+## Rules status
+
+The rule set in this document is considered baseline-complete for the current release.
+
+Future rule adjustments should be made only when:
+
+- user feedback reveals consistent confusion or friction
+- balancing issues are observed in regular usage
+- correctness issues are found in event or points behavior
+
 ## Core Structure
 
 Next Up uses three game buckets:
