@@ -233,7 +233,7 @@ export default function Library() {
             Add a game (♦{costs.addGame})
           </button>
           <Link
-            to="/"
+            to="/next-up/board"
             className="inline-flex h-12 min-w-[6rem] items-center justify-center rounded-full border border-white/10 bg-white/5 px-5 text-sm font-semibold text-white transition hover:border-accent/40 hover:bg-white/10"
           >
             Back to board

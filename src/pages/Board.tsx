@@ -371,7 +371,7 @@ export default function Board() {
               Record play
             </button>
             <Link
-              to="/library"
+              to="/next-up/library"
               className="flex min-h-[48px] items-center justify-center rounded-2xl border border-white/10 bg-white/5 px-3 py-2 text-sm font-semibold text-accent transition hover:border-accent/40 hover:bg-white/10"
             >
               View full library

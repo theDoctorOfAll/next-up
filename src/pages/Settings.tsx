@@ -327,7 +327,7 @@ export default function Settings() {
             <h1 className="text-3xl font-semibold tracking-tight text-accent">Settings</h1>
             <p className="mt-2 text-sm text-slate-300">Manage local app state and handle accessibility.</p>
           </div>
-          <Link to="/" className="rounded-full border border-white/10 bg-white/5 px-4 py-2 text-sm font-semibold text-accent transition hover:border-accent/40 hover:bg-white/10">
+          <Link to="/next-up/board" className="rounded-full border border-white/10 bg-white/5 px-4 py-2 text-sm font-semibold text-accent transition hover:border-accent/40 hover:bg-white/10">
             Back to board
           </Link>
         </div>

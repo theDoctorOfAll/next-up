@@ -51,11 +51,11 @@ export default function App() {
 
   const navLinks = useMemo(
     () => [
-      { to: "/", label: "Board" },
-      { to: "/library", label: "Library" },
-      { to: "/events", label: "Event Log" },
-      { to: "/stats", label: "Statistics" },
-      { to: "/settings", label: "Settings" }
+      { to: "/next-up/board", label: "Board" },
+      { to: "/next-up/library", label: "Library" },
+      { to: "/next-up/events", label: "Event Log" },
+      { to: "/next-up/stats", label: "Statistics" },
+      { to: "/next-up/settings", label: "Settings" }
     ],
     []
   );
@@ -100,12 +100,18 @@ export default function App() {
 
           <main className="flex-1 p-8 sm:p-10">
             <Routes>
-              <Route path="/" element={<Board />} />
-              <Route path="/next-up" element={<Navigate to="/" replace />} />
-              <Route path="/library" element={<Library />} />
-              <Route path="/events" element={<Events />} />
-              <Route path="/stats" element={<Stats />} />
-              <Route path="/settings" element={<Settings />} />
+              <Route path="/" element={<Navigate to="/next-up/board" replace />} />
+              <Route path="/board" element={<Navigate to="/next-up/board" replace />} />
+              <Route path="/library" element={<Navigate to="/next-up/library" replace />} />
+              <Route path="/events" element={<Navigate to="/next-up/events" replace />} />
+              <Route path="/stats" element={<Navigate to="/next-up/stats" replace />} />
+              <Route path="/settings" element={<Navigate to="/next-up/settings" replace />} />
+              <Route path="/next-up" element={<Navigate to="/next-up/board" replace />} />
+              <Route path="/next-up/board" element={<Board />} />
+              <Route path="/next-up/library" element={<Library />} />
+              <Route path="/next-up/events" element={<Events />} />
+              <Route path="/next-up/stats" element={<Stats />} />
+              <Route path="/next-up/settings" element={<Settings />} />
             </Routes>
           </main>
         </div>
@@ -160,12 +166,18 @@ export default function App() {
 
           <main className="p-5 pt-16 sm:p-8 sm:pt-24">
             <Routes>
-              <Route path="/" element={<Board />} />
-              <Route path="/next-up" element={<Navigate to="/" replace />} />
-              <Route path="/library" element={<Library />} />
-              <Route path="/events" element={<Events />} />
-              <Route path="/stats" element={<Stats />} />
-              <Route path="/settings" element={<Settings />} />
+              <Route path="/" element={<Navigate to="/next-up/board" replace />} />
+              <Route path="/board" element={<Navigate to="/next-up/board" replace />} />
+              <Route path="/library" element={<Navigate to="/next-up/library" replace />} />
+              <Route path="/events" element={<Navigate to="/next-up/events" replace />} />
+              <Route path="/stats" element={<Navigate to="/next-up/stats" replace />} />
+              <Route path="/settings" element={<Navigate to="/next-up/settings" replace />} />
+              <Route path="/next-up" element={<Navigate to="/next-up/board" replace />} />
+              <Route path="/next-up/board" element={<Board />} />
+              <Route path="/next-up/library" element={<Library />} />
+              <Route path="/next-up/events" element={<Events />} />
+              <Route path="/next-up/stats" element={<Stats />} />
+              <Route path="/next-up/settings" element={<Settings />} />
             </Routes>
           </main>
         </div>

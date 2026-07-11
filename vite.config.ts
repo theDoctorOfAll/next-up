@@ -2,22 +2,7 @@ import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import { VitePWA } from 'vite-plugin-pwa'
 
-function getGithubPagesBase() {
-  if (!process.env.GITHUB_ACTIONS) {
-    return '/'
-  }
-
-  const repository = process.env.GITHUB_REPOSITORY ?? ''
-  const repoName = repository.split('/')[1] ?? ''
-
-  if (!repoName || repoName.endsWith('.github.io')) {
-    return '/'
-  }
-
-  return `/${repoName}/`
-}
-
-const base = getGithubPagesBase()
+const base = '/next-up/'
 
 // https://vite.dev/config/
 export default defineConfig({

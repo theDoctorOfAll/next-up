@@ -17,7 +17,7 @@ export default function Stats() {
             <h1 className="text-3xl font-semibold tracking-tight text-accent">Statistics</h1>
             <p className="mt-2 text-sm text-slate-300">A snapshot of your current library, event history, and economy activity.</p>
           </div>
-          <Link to="/" className="rounded-full border border-white/10 bg-white/5 px-4 py-2 text-sm font-semibold text-accent transition hover:border-accent/40 hover:bg-white/10">
+          <Link to="/next-up/board" className="rounded-full border border-white/10 bg-white/5 px-4 py-2 text-sm font-semibold text-accent transition hover:border-accent/40 hover:bg-white/10">
             Back to board
           </Link>
         </div>
