@@ -45,7 +45,6 @@ html[data-contrast="high"] {
 html[data-contrast="high"] body {
   background: #000;
   color: #fff;
-  filter: brightness(1.1) contrast(1.2) saturate(1.08);
 }
 
 html[data-contrast="high"] :focus-visible {

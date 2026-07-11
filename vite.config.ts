@@ -22,6 +22,9 @@ const base = getGithubPagesBase()
 // https://vite.dev/config/
 export default defineConfig({
   base,
+  server: {
+    allowedHosts: ['node.appaloosa-blues.ts.net']
+  },
   plugins: [
     react(),
     VitePWA({

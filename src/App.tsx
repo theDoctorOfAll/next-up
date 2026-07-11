@@ -11,7 +11,7 @@ function Placeholder({ title }: { title: string }) {
   return (
     <div className="bg-panel p-6 rounded-xl">
       <h2 className="text-xl font-bold text-accent">{title}</h2>
-      <p className="opacity-60 mt-2">Coming in Milestone 2+</p>
+      <p className="opacity-60 mt-2">Coming soon</p>
     </div>
   );
 }
@@ -158,7 +158,7 @@ export default function App() {
             </nav>
           </aside>
 
-          <main className="p-6 pt-20 sm:p-8 sm:pt-24">
+          <main className="p-5 pt-16 sm:p-8 sm:pt-24">
             <Routes>
               <Route path="/" element={<Board />} />
               <Route path="/next-up" element={<Navigate to="/" replace />} />

@@ -59,6 +59,17 @@ function isSameLocalWeek(left: number, right: number) {
   return startOfLocalWeek(left) === startOfLocalWeek(right);
 }
 
+async function hasClaimedPoolBonusToday(pool: Exclude<PlayPool, "reserve" | "multiplayer">, timestamp: number) {
+  const startOfDay = startOfLocalDay(timestamp);
+  const events = await db.events.toArray();
+
+  return events.some((event) =>
+    event.type === "PLAY_RECORDED"
+    && event.timestamp >= startOfDay
+    && event.payload?.pool === pool
+  );
+}
+
 export async function evaluateRollRules(
   board: BoardState,
   pool: ActiveGamePool,
@@ -150,6 +161,7 @@ export async function evaluatePlayRules(
   }
 
   const playtimeReward = Math.floor(normalizedPlaytimeMinutes / 15) * PLAYTIME_REWARD_PER_15_MINUTES;
+  const hasAlreadyClaimedPoolBonusToday = await hasClaimedPoolBonusToday(pool, timestamp);
 
   if (pool === "weekly") {
     const weekStart = startOfLocalWeek(timestamp);
@@ -159,7 +171,7 @@ export async function evaluatePlayRules(
 
     return {
       allowed: true,
-      reward: PLAY_REWARD + progressionReward + playtimeReward
+      reward: (hasAlreadyClaimedPoolBonusToday ? 0 : PLAY_REWARD + progressionReward) + playtimeReward
     };
   }
 
@@ -172,7 +184,7 @@ export async function evaluatePlayRules(
 
   return {
     allowed: true,
-    reward: PLAY_REWARD + playtimeReward
+    reward: (hasAlreadyClaimedPoolBonusToday ? 0 : PLAY_REWARD) + playtimeReward
   };
 }
 
