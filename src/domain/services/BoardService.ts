@@ -12,6 +12,10 @@ import { addEvent, addPoints, getPointTotal } from "../../database/services";
 
 const RESERVE_MOVE_COST = 25;
 
+export interface ReserveMoveOptions {
+  chargeCost?: boolean;
+}
+
 export async function getCurrentBoard(): Promise<BoardState> {
   return getBoard();
 }
@@ -40,10 +44,11 @@ export async function updateWeeklyGame(gameId: number): Promise<BoardState> {
   return board;
 }
 
-export async function setReserveGame(gameId: number): Promise<BoardState> {
+export async function setReserveGame(gameId: number, options: ReserveMoveOptions = {}): Promise<BoardState> {
   const board = await getBoard();
   const previousReserveGameId = board.reserveGameId;
   const nextReserveGame = await getGameByIdFromRepository(gameId);
+  const shouldChargeCost = options.chargeCost !== false;
 
   if (!nextReserveGame) {
     throw new Error("No game found for the reserve slot.");
@@ -69,7 +74,7 @@ export async function setReserveGame(gameId: number): Promise<BoardState> {
     }
   }
 
-  if (!nextReserveGame.reserved) {
+  if (shouldChargeCost && !nextReserveGame.reserved) {
     const balance = await getPointTotal();
 
     if (balance < RESERVE_MOVE_COST) {
@@ -89,7 +94,7 @@ export async function setReserveGame(gameId: number): Promise<BoardState> {
     board.weeklyPlayed = false;
   }
 
-  if (!nextReserveGame.reserved) {
+  if (shouldChargeCost && !nextReserveGame.reserved) {
     const eventId = await addEvent("POINTS_SPENT", {
       gameId,
       amount: RESERVE_MOVE_COST,

@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 import { getAllGames } from "../database/repositories/gameRepository";
 import { addGameToLibrary, adjustGameWeightInLibrary, parsePlatformsInput, deleteGameFromLibrary, getWeightValueFromSteps, updateGameInLibrary } from "../domain/services/GameLibraryService";
 import { getLibraryRuleCosts } from "../domain/rules/rulesEngine";
+import { setReserveGame } from "../domain/services/BoardService";
 import type { Game, GamePool } from "../database/db";
 import TransientToast from "../components/TransientToast";
 
@@ -22,6 +23,7 @@ export default function Library() {
   const [pool, setPool] = useState<GamePool>("daily");
   const [platformsInput, setPlatformsInput] = useState("");
   const [isMultiplayer, setIsMultiplayer] = useState(false);
+  const [moveNewGameToReserve, setMoveNewGameToReserve] = useState(true);
   const [editTitle, setEditTitle] = useState("");
   const [editPool, setEditPool] = useState<GamePool>("daily");
   const [editPlatforms, setEditPlatforms] = useState("");
@@ -52,17 +54,30 @@ export default function Library() {
     event.preventDefault();
     setMessage(null);
     setIsSavingAdd(true);
+    const shouldMoveNewGameToReserve = moveNewGameToReserve;
 
     try {
-      await addGameToLibrary(title, pool, parsePlatformsInput(platformsInput), isMultiplayer);
+      const addedGameId = await addGameToLibrary(title, pool, parsePlatformsInput(platformsInput), isMultiplayer);
       const addedTitle = title.trim();
+
+      if (shouldMoveNewGameToReserve) {
+        await setReserveGame(addedGameId, { chargeCost: false });
+      }
+
       setTitle("");
       setPool("daily");
       setPlatformsInput("");
       setIsMultiplayer(false);
+      setMoveNewGameToReserve(true);
       setIsAddDialogOpen(false);
       await refreshLibrary();
-      setMessage(pool === "none" ? `Added "${addedTitle}" outside the active pools.` : `Added "${addedTitle}" to the ${pool} pool.`);
+      setMessage(
+        shouldMoveNewGameToReserve
+          ? `Added "${addedTitle}" and moved it into reserve at no additional cost.`
+          : pool === "none"
+            ? `Added "${addedTitle}" outside the active pools.`
+            : `Added "${addedTitle}" to the ${pool} pool.`
+      );
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Could not add the game.");
     } finally {
@@ -209,14 +224,17 @@ export default function Library() {
         <div className="flex items-center gap-3">
           <button
             type="button"
-            onClick={() => setIsAddDialogOpen(true)}
-            className="inline-flex h-12 items-center justify-center rounded-full border border-accent/30 bg-accent/10 px-5 text-sm font-semibold text-accent transition hover:border-accent/50 hover:bg-accent/20"
+            onClick={() => {
+              setMoveNewGameToReserve(true);
+              setIsAddDialogOpen(true);
+            }}
+            className="inline-flex h-12 min-w-[8rem] items-center justify-center rounded-full border border-accent/30 bg-accent/10 px-5 text-sm font-semibold text-accent transition hover:border-accent/50 hover:bg-accent/20"
           >
             Add a game (♦{costs.addGame})
           </button>
           <Link
             to="/"
-            className="inline-flex h-12 items-center justify-center rounded-full border border-white/10 bg-white/5 px-5 text-sm font-semibold text-white transition hover:border-accent/40 hover:bg-white/10"
+            className="inline-flex h-12 min-w-[6rem] items-center justify-center rounded-full border border-white/10 bg-white/5 px-5 text-sm font-semibold text-white transition hover:border-accent/40 hover:bg-white/10"
           >
             Back to board
           </Link>
@@ -508,6 +526,15 @@ export default function Library() {
                   className="h-4 w-4 accent-accent"
                 />
                 <span>Multiplayer game</span>
+              </label>
+              <label className="flex items-center gap-3 rounded-2xl border border-accent/20 bg-accent/10 px-4 py-3 text-sm text-white">
+                <input
+                  type="checkbox"
+                  checked={moveNewGameToReserve}
+                  onChange={(event) => setMoveNewGameToReserve(event.target.checked)}
+                  className="h-4 w-4 accent-accent"
+                />
+                <span>Move game into reserve (free!)</span>
               </label>
               <div className="flex justify-end">
                 <button
