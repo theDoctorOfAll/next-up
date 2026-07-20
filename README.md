@@ -79,6 +79,77 @@ To verify installability, open the preview build in a Chromium-based browser and
 
 Library CSV files currently use the columns `title,pool,weight,platforms,multiplayer,reserved`.
 
+## IGDB Integration (Phase 1)
+
+Phase 1 introduces a secure Cloudflare Worker proxy for IGDB search. This keeps Twitch/IGDB credentials off the browser client and enables debug-screen cover lookups.
+
+Worker location:
+
+- `igdb-worker/`
+
+### 1. Install worker dependencies
+
+```bash
+cd igdb-worker
+npm install
+```
+
+### 2. Configure local secrets
+
+Create `igdb-worker/.dev.vars` (gitignored) with:
+
+```bash
+TWITCH_CLIENT_ID=your_client_id
+TWITCH_CLIENT_SECRET=your_client_secret
+```
+
+### 3. Configure allowed origins
+
+Edit `igdb-worker/wrangler.toml` and set `ALLOWED_ORIGINS` to your local and production origins, for example:
+
+```toml
+ALLOWED_ORIGINS = "http://localhost:5173,https://your-user.github.io"
+DEFAULT_ORIGIN = "http://localhost:5173"
+```
+
+### 4. Run locally
+
+```bash
+cd igdb-worker
+npm run dev
+```
+
+Endpoints:
+
+- `GET /health`
+- `POST /search`
+
+Example request:
+
+```bash
+curl -X POST http://127.0.0.1:8787/search \
+	-H "Content-Type: application/json" \
+	-H "Origin: http://localhost:5173" \
+	-d '{"query":"Elden Ring","limit":10}'
+```
+
+### 5. Deploy to Cloudflare
+
+Set production secrets:
+
+```bash
+cd igdb-worker
+wrangler secret put TWITCH_CLIENT_ID
+wrangler secret put TWITCH_CLIENT_SECRET
+```
+
+Deploy:
+
+```bash
+cd igdb-worker
+npm run deploy
+```
+
 ### Developer mode and runtime toggles
 
 Developer mode is disabled by default. In development, you can re-enable developer-only tools (such as reset/dev point controls and initial dev seeding) from the browser console:

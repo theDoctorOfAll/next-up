@@ -1,0 +1,15 @@
+name = "next-up-igdb-proxy"
+main = "src/index.ts"
+compatibility_date = "2026-07-20"
+
+[vars]
+# Comma-separated allowlist for browser origins.
+# Example: "http://localhost:5173,https://your-username.github.io"
+ALLOWED_ORIGINS = "http://localhost:5173"
+
+# Optional default origin when no Origin header is present.
+# Useful for non-browser smoke tests.
+DEFAULT_ORIGIN = "http://localhost:5173"
+
+[observability]
+enabled = true

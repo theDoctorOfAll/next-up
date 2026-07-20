@@ -5,7 +5,9 @@ import Library from "./pages/Library";
 import Events from "./pages/Events";
 import Stats from "./pages/Stats";
 import Settings from "./pages/Settings";
+import Debug from "./pages/Debug";
 import { useAppInitialization } from "./hooks/useAppInitialization";
+import { isDeveloperModeEnabled } from "./core/runtimePreferences";
 
 function Placeholder({ title }: { title: string }) {
   return (
@@ -29,6 +31,7 @@ export default function App() {
   const { initialized, error } = useAppInitialization();
   const [mobileAspectMode, setMobileAspectMode] = useState(() => isMobileAspectRatio());
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+  const isDeveloperMode = isDeveloperModeEnabled();
 
   useEffect(() => {
     function handleViewportChange() {
@@ -49,16 +52,21 @@ export default function App() {
     };
   }, []);
 
-  const navLinks = useMemo(
-    () => [
+  const navLinks = useMemo(() => {
+    const links = [
       { to: "/next-up/board", label: "Board" },
       { to: "/next-up/library", label: "Library" },
       { to: "/next-up/events", label: "Event Log" },
       { to: "/next-up/stats", label: "Statistics" },
       { to: "/next-up/settings", label: "Settings" }
-    ],
-    []
-  );
+    ];
+
+    if (isDeveloperMode) {
+      links.push({ to: "/next-up/debug", label: "Debug" });
+    }
+
+    return links;
+  }, [isDeveloperMode]);
 
   if (error) {
     return (
@@ -106,12 +114,14 @@ export default function App() {
               <Route path="/events" element={<Navigate to="/next-up/events" replace />} />
               <Route path="/stats" element={<Navigate to="/next-up/stats" replace />} />
               <Route path="/settings" element={<Navigate to="/next-up/settings" replace />} />
+              <Route path="/debug" element={<Navigate to="/next-up/debug" replace />} />
               <Route path="/next-up" element={<Navigate to="/next-up/board" replace />} />
               <Route path="/next-up/board" element={<Board />} />
               <Route path="/next-up/library" element={<Library />} />
               <Route path="/next-up/events" element={<Events />} />
               <Route path="/next-up/stats" element={<Stats />} />
               <Route path="/next-up/settings" element={<Settings />} />
+              <Route path="/next-up/debug" element={isDeveloperMode ? <Debug /> : <Navigate to="/next-up/board" replace />} />
             </Routes>
           </main>
         </div>
@@ -172,12 +182,14 @@ export default function App() {
               <Route path="/events" element={<Navigate to="/next-up/events" replace />} />
               <Route path="/stats" element={<Navigate to="/next-up/stats" replace />} />
               <Route path="/settings" element={<Navigate to="/next-up/settings" replace />} />
+              <Route path="/debug" element={<Navigate to="/next-up/debug" replace />} />
               <Route path="/next-up" element={<Navigate to="/next-up/board" replace />} />
               <Route path="/next-up/board" element={<Board />} />
               <Route path="/next-up/library" element={<Library />} />
               <Route path="/next-up/events" element={<Events />} />
               <Route path="/next-up/stats" element={<Stats />} />
               <Route path="/next-up/settings" element={<Settings />} />
+              <Route path="/next-up/debug" element={isDeveloperMode ? <Debug /> : <Navigate to="/next-up/board" replace />} />
             </Routes>
           </main>
         </div>

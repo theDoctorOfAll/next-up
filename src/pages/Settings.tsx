@@ -2,8 +2,9 @@ import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { clearEventHistory, addPoints } from "../database/services";
 import { getPointBalance } from "../database/repositories/pointRepository";
+import { getBoard } from "../database/repositories/boardRepository";
 import { addGame, getAllGames, updateGame } from "../database/repositories/gameRepository";
-import type { Game, GamePool } from "../database/db";
+import { db, type Game, type GamePool } from "../database/db";
 import { advanceClockByDays, getClockOffsetMs } from "../core/clock";
 import { isDeveloperModeEnabled, isHighContrastModeEnabled, setHighContrastModeEnabled } from "../core/runtimePreferences";
 import TransientToast from "../components/TransientToast";
@@ -101,6 +102,7 @@ export default function Settings() {
   const [isGrantingPoints, setIsGrantingPoints] = useState(false);
   const [isJumpingDay, setIsJumpingDay] = useState(false);
   const [isExportingLibrary, setIsExportingLibrary] = useState(false);
+  const [isExportingAllData, setIsExportingAllData] = useState(false);
   const [isImportingLibrary, setIsImportingLibrary] = useState(false);
   const [isHighContrastMode, setIsHighContrastMode] = useState(() => isHighContrastModeEnabled());
   const [isDeveloperMode] = useState(() => isDeveloperModeEnabled());
@@ -217,6 +219,49 @@ export default function Settings() {
       setMessage(error instanceof Error ? error.message : "Could not export the game library.");
     } finally {
       setIsExportingLibrary(false);
+    }
+  }
+
+  async function handleExportAllData() {
+    setIsExportingAllData(true);
+    setMessage(null);
+
+    try {
+      const [games, events, board, points, metadata] = await Promise.all([
+        getAllGames(),
+        db.events.orderBy("timestamp").toArray(),
+        getBoard(),
+        db.points.orderBy("timestamp").toArray(),
+        db.metadata.toArray()
+      ]);
+
+      const payload = {
+        schemaVersion: 1,
+        exportedAt: new Date().toISOString(),
+        data: {
+          library: games,
+          eventLog: events,
+          board,
+          points,
+          metadata
+        }
+      };
+
+      const blob = new Blob([`${JSON.stringify(payload, null, 2)}\n`], { type: "application/json;charset=utf-8" });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `next-up-full-export-${new Date().toISOString().slice(0, 10)}.json`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(url);
+
+      setMessage(`Exported full data snapshot: ${games.length} game${games.length === 1 ? "" : "s"}, ${events.length} event${events.length === 1 ? "" : "s"}.`);
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Could not export full data snapshot.");
+    } finally {
+      setIsExportingAllData(false);
     }
   }
 
@@ -429,6 +474,28 @@ export default function Settings() {
             onChange={(event) => void handleImportLibrary(event)}
             className="hidden"
           />
+        </div>
+      </div>
+
+      <div className="rounded-[32px] border border-white/20 bg-slate-900/85 p-6 shadow-[0_35px_100px_-45px_rgba(0,0,0,0.9)]">
+        <div className="space-y-4">
+          <div>
+            <h2 className="text-xl font-semibold tracking-tight text-accent">Full data export</h2>
+            <p className="mt-2 text-sm text-slate-300">
+              Export all persisted data in one JSON file, including library, event log, current board, points ledger, and metadata.
+            </p>
+          </div>
+
+          <div className="flex flex-wrap gap-3">
+            <button
+              type="button"
+              onClick={() => void handleExportAllData()}
+              disabled={isExportingAllData}
+              className="rounded-full border border-violet-400/30 bg-violet-500/10 px-5 py-3 text-sm font-semibold text-violet-300 transition hover:border-violet-400/50 hover:bg-violet-500/20 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              {isExportingAllData ? "Exporting..." : "Export full data (JSON)"}
+            </button>
+          </div>
         </div>
       </div>
 

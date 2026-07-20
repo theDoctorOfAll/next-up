@@ -22,3 +22,7 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Cloudflare Worker local secrets
+igdb-worker/.dev.vars
+igdb-worker/.wrangler/

@@ -23,15 +23,26 @@ function getEffectiveWeightFromSteps(steps: number): number {
   return Math.max(0.01, value);
 }
 
-export function weightedPick(items: Game[]): Game | null {
+export function weightedPick(
+  items: Game[],
+  getWeightMultiplier: (game: Game) => number = () => 1
+): Game | null {
   if (items.length === 0) return null;
 
-  const totalWeight = items.reduce((sum, game) => sum + getEffectiveWeightFromSteps(game.weight), 0);
+  const totalWeight = items.reduce((sum, game) => {
+    const multiplier = Math.max(0, getWeightMultiplier(game));
+    return sum + getEffectiveWeightFromSteps(game.weight) * multiplier;
+  }, 0);
+
+  if (totalWeight <= 0) {
+    return items[Math.floor(Math.random() * items.length)] ?? items[0];
+  }
 
   let r = Math.random() * totalWeight;
 
   for (const item of items) {
-    r -= getEffectiveWeightFromSteps(item.weight);
+    const multiplier = Math.max(0, getWeightMultiplier(item));
+    r -= getEffectiveWeightFromSteps(item.weight) * multiplier;
     if (r <= 0) return item;
   }
 
