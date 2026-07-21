@@ -126,6 +126,13 @@ export default function Library() {
     setCoverSuccessMessage(null);
   }
 
+  function openAddGameDialog() {
+    setMoveNewGameToReserve(true);
+    setPendingAddCover(null);
+    setCoverDialogMode(null);
+    setIsAddDialogOpen(true);
+  }
+
   function startEditing(game: Game) {
     setEditingGame(game);
     setEditTitle(game.title);
@@ -347,6 +354,39 @@ export default function Library() {
   }, []);
 
   useEffect(() => {
+    const detail = {
+      actions: [
+        {
+          id: "library-add-game",
+          label: "Add",
+          type: "event",
+          eventName: "nextup:library-open-add",
+          icon: "plus"
+        },
+        {
+          id: "library-back-board",
+          label: "Board",
+          type: "link",
+          to: "/next-up/board",
+          icon: "back"
+        }
+      ]
+    };
+
+    function handleOpenAdd() {
+      openAddGameDialog();
+    }
+
+    window.dispatchEvent(new CustomEvent("nextup:mobile-header-items", { detail }));
+    window.addEventListener("nextup:library-open-add", handleOpenAdd);
+
+    return () => {
+      window.removeEventListener("nextup:library-open-add", handleOpenAdd);
+      window.dispatchEvent(new CustomEvent("nextup:mobile-header-items", { detail: {} }));
+    };
+  }, []);
+
+  useEffect(() => {
     if (!message) {
       return;
     }
@@ -516,21 +556,16 @@ export default function Library() {
 
   return (
     <div className="space-y-6 text-white">
-      <div className="flex items-center justify-between gap-3">
+      <div className="hidden items-center justify-between gap-3 lg:flex">
         <div>
           <h1 className="text-2xl font-bold text-accent">Library</h1>
-          <p className="mt-1 text-sm opacity-80">Browse games in each RNG pool, or keep titles outside the active pools.</p>
+          <p className="mt-1 hidden text-sm opacity-80 lg:block">Browse games in each RNG pool, or keep titles outside the active pools.</p>
         </div>
 
         <div className="flex items-center gap-3">
           <button
             type="button"
-            onClick={() => {
-              setMoveNewGameToReserve(true);
-              setPendingAddCover(null);
-              setCoverDialogMode(null);
-              setIsAddDialogOpen(true);
-            }}
+            onClick={openAddGameDialog}
             className="inline-flex h-12 min-w-[8rem] items-center justify-center rounded-full border border-accent/30 bg-accent/10 px-5 text-sm font-semibold text-accent transition hover:border-accent/50 hover:bg-accent/20"
           >
             Add a game (♦{costs.addGame})

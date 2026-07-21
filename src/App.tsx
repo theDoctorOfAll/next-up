@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
-import { Routes, Route, Link, Navigate } from "react-router-dom";
-import Board from "./pages/Board";
+import { Routes, Route, Link, Navigate, useLocation } from "react-router-dom";
+import { ArrowLeft, BookOpen, Menu, Play, Plus } from "lucide-react";
+import Board from "./pages/board";
 import Library from "./pages/Library";
 import Events from "./pages/Events";
 import Stats from "./pages/Stats";
@@ -8,15 +9,6 @@ import Settings from "./pages/Settings";
 import Debug from "./pages/Debug";
 import { useAppInitialization } from "./hooks/useAppInitialization";
 import { isDeveloperModeEnabled } from "./core/runtimePreferences";
-
-function Placeholder({ title }: { title: string }) {
-  return (
-    <div className="bg-panel p-6 rounded-xl">
-      <h2 className="text-xl font-bold text-accent">{title}</h2>
-      <p className="opacity-60 mt-2">Coming soon</p>
-    </div>
-  );
-}
 
 function isMobileAspectRatio() {
   if (typeof window === "undefined") {
@@ -27,10 +19,81 @@ function isMobileAspectRatio() {
   return aspectRatio < 0.9 || window.innerWidth < 900;
 }
 
+interface MobileHeaderItem {
+  id: string;
+  label: string;
+  value: string;
+}
+
+interface MobileHeaderAction {
+  id: string;
+  label: string;
+  type: "link" | "event";
+  to?: string;
+  eventName?: string;
+  icon?: "plus" | "back" | "play" | "library";
+}
+
+interface MobileHeaderPayload {
+  items?: MobileHeaderItem[];
+  actions?: MobileHeaderAction[];
+}
+
+function getMobileHeaderIcon(icon?: MobileHeaderAction["icon"]) {
+  if (icon === "plus") {
+    return <Plus size={14} />;
+  }
+
+  if (icon === "back") {
+    return <ArrowLeft size={14} />;
+  }
+
+  if (icon === "play") {
+    return <Play size={14} />;
+  }
+
+  if (icon === "library") {
+    return <BookOpen size={14} />;
+  }
+
+  return null;
+}
+
+function getMobilePageTitle(pathname: string) {
+  if (pathname === "/next-up/board" || pathname === "/board" || pathname === "/" || pathname === "/next-up") {
+    return "Next Up";
+  }
+
+  if (pathname.includes("/library")) {
+    return "Library";
+  }
+
+  if (pathname.includes("/events")) {
+    return "Event Log";
+  }
+
+  if (pathname.includes("/stats")) {
+    return "Statistics";
+  }
+
+  if (pathname.includes("/settings")) {
+    return "Settings";
+  }
+
+  if (pathname.includes("/debug")) {
+    return "Debug";
+  }
+
+  return "Next Up";
+}
+
 export default function App() {
   const { initialized, error } = useAppInitialization();
+  const location = useLocation();
   const [mobileAspectMode, setMobileAspectMode] = useState(() => isMobileAspectRatio());
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+  const [mobileHeaderItems, setMobileHeaderItems] = useState<MobileHeaderItem[]>([]);
+  const [mobileHeaderActions, setMobileHeaderActions] = useState<MobileHeaderAction[]>([]);
   const isDeveloperMode = isDeveloperModeEnabled();
 
   useEffect(() => {
@@ -67,6 +130,34 @@ export default function App() {
 
     return links;
   }, [isDeveloperMode]);
+
+  useEffect(() => {
+    setMobileHeaderItems([]);
+    setMobileHeaderActions([]);
+  }, [location.pathname]);
+
+  useEffect(() => {
+    function handleHeaderItems(event: Event) {
+      const customEvent = event as CustomEvent<MobileHeaderPayload | MobileHeaderItem[] | undefined>;
+      const detail = customEvent.detail;
+
+      const payload = Array.isArray(detail)
+        ? { items: detail }
+        : detail ?? {};
+
+      const items = Array.isArray(payload.items) ? payload.items : [];
+      const actions = Array.isArray(payload.actions) ? payload.actions : [];
+
+      setMobileHeaderItems(items);
+      setMobileHeaderActions(actions.slice(0, 2));
+    }
+
+    window.addEventListener("nextup:mobile-header-items", handleHeaderItems as EventListener);
+
+    return () => {
+      window.removeEventListener("nextup:mobile-header-items", handleHeaderItems as EventListener);
+    };
+  }, []);
 
   if (error) {
     return (
@@ -127,13 +218,70 @@ export default function App() {
         </div>
       ) : (
         <div className="relative min-h-screen">
-          <button
-            type="button"
-            onClick={() => setIsSidebarOpen(true)}
-            className="fixed left-4 top-4 z-[11010] rounded-full border border-white/15 bg-panel/95 px-4 py-2 text-sm font-semibold text-accent shadow-[0_20px_70px_-35px_rgba(0,0,0,0.9)]"
-          >
-            Menu
-          </button>
+          <header className="fixed inset-x-0 top-0 z-[11030] border-b border-white/10 bg-panel/95 px-4 py-3 backdrop-blur">
+            <div className="mx-auto flex max-w-5xl items-center justify-between gap-3">
+              <button
+                type="button"
+                aria-label={isSidebarOpen ? "Close menu" : "Open menu"}
+                onClick={() => setIsSidebarOpen((current) => !current)}
+                className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-white/15 bg-white/5 text-accent shadow-[0_20px_50px_-35px_rgba(0,0,0,0.85)]"
+              >
+                <Menu size={18} strokeWidth={2.4} />
+              </button>
+
+              <h1 className="pointer-events-none absolute left-1/2 max-w-[56vw] -translate-x-1/2 truncate text-center text-xl font-bold tracking-[0.08em] text-accent">
+                {getMobilePageTitle(location.pathname)}
+              </h1>
+
+              <div className="flex items-center gap-1.5">
+                {mobileHeaderActions.map((action) => {
+                  const icon = getMobileHeaderIcon(action.icon);
+
+                  if (action.type === "link" && action.to) {
+                    return (
+                      <Link
+                        key={action.id}
+                        to={action.to}
+                        className="inline-flex h-9 items-center gap-1.5 rounded-xl border border-white/15 bg-white/5 px-2.5 text-xs font-semibold text-slate-100"
+                      >
+                        {icon}
+                        <span>{action.label}</span>
+                      </Link>
+                    );
+                  }
+
+                  if (action.type === "event" && action.eventName) {
+                    const eventName = action.eventName;
+
+                    return (
+                      <button
+                        key={action.id}
+                        type="button"
+                        onClick={() => window.dispatchEvent(new CustomEvent(eventName))}
+                        className="inline-flex h-9 items-center gap-1.5 rounded-xl border border-white/15 bg-white/5 px-2.5 text-xs font-semibold text-slate-100"
+                      >
+                        {icon}
+                        <span>{action.label}</span>
+                      </button>
+                    );
+                  }
+
+                  return null;
+                })}
+
+                {mobileHeaderItems.map((item) => (
+                  <div
+                    key={item.id}
+                    className="rounded-xl border border-accent/25 bg-accent/10 px-2.5 py-1.5 text-right"
+                    aria-label={item.label}
+                  >
+                    <p className="text-[10px] uppercase tracking-wide text-slate-300">{item.label}</p>
+                    <p className="text-sm font-semibold text-accent">{item.value}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </header>
 
           {isSidebarOpen ? (
             <button
@@ -174,7 +322,7 @@ export default function App() {
             </nav>
           </aside>
 
-          <main className="p-5 pt-16 sm:p-8 sm:pt-24">
+          <main className="p-5 pt-20 sm:p-8 sm:pt-24">
             <Routes>
               <Route path="/" element={<Navigate to="/next-up/board" replace />} />
               <Route path="/board" element={<Navigate to="/next-up/board" replace />} />

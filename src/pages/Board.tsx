@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
+import { BookOpen, Play } from "lucide-react";
 import { rollDailyGame } from "../domain/useCases/rollDailyGame";
 import { rollWeeklyGame } from "../domain/useCases/rollWeeklyGame";
 import { recordPlaySession } from "../domain/useCases/recordPlaySession";
@@ -144,12 +145,18 @@ export default function Board() {
       .sort((left, right) => left.title.localeCompare(right.title)),
     [libraryGames]
   );
+  const reserveOptions = useMemo(
+    () => [...libraryGames].sort((left, right) => left.title.localeCompare(right.title)),
+    [libraryGames]
+  );
   const selectedMultiplayerGame = multiplayerOptions.find((game) => game.id?.toString() === multiplayerGameId);
   const playtimeBonus = getPlaytimeBonus(playtimeMinutes);
   const projectedPoolBonus = projectedSessionReward === null ? null : Math.max(0, projectedSessionReward - playtimeBonus);
   const multiplayerReward = getMultiplayerReward(playerCount);
   const dailyRerollCost = view?.dailyIsReroll ? DAILY_REROLL_COST : 0;
   const weeklyRerollCost = view?.weeklyIsReroll ? WEEKLY_REROLL_COST : 0;
+  const selectedReserveGameId = Number(reserveSelection);
+  const isCurrentReserveSelection = view?.reserveGameId !== undefined && selectedReserveGameId === view.reserveGameId;
 
   async function refreshBoard() {
     const [nextView, nextBalance, nextGames] = await Promise.all([
@@ -216,6 +223,20 @@ export default function Board() {
 
     return () => window.clearTimeout(timeoutId);
   }, [message]);
+
+  useEffect(() => {
+    const headerItems = [{
+      id: "balance",
+      label: "Balance",
+      value: `♦${balance}`
+    }];
+
+    window.dispatchEvent(new CustomEvent("nextup:mobile-header-items", { detail: headerItems }));
+
+    return () => {
+      window.dispatchEvent(new CustomEvent("nextup:mobile-header-items", { detail: [] }));
+    };
+  }, [balance]);
 
   useEffect(() => {
     if (!isPlayDialogOpen || isMultiplayerLogging) {
@@ -416,7 +437,7 @@ export default function Board() {
     footer: (
       <p className={`text-center text-xs ${dailyRerollCost > balance ? "text-red-300" : "text-slate-500"}`}>
         {view?.dailyIsReroll
-          ? `${dailyRerollCost > balance ? "Insufficient balance for reroll." : "Reroll uses ♦ from your balance."}`
+          ? `${dailyRerollCost > balance ? "Insufficient balance for reroll." : "Reroll uses ♦"}`
           : "First daily roll each day is free."}
       </p>
     ),
@@ -439,7 +460,7 @@ export default function Board() {
     footer: (
       <p className={`text-center text-xs ${weeklyRerollCost > balance ? "text-red-300" : "text-slate-500"}`}>
         {view?.weeklyIsReroll
-          ? `${weeklyRerollCost > balance ? "Insufficient balance for reroll." : "Reroll uses ♦ from your balance."}`
+          ? `${weeklyRerollCost > balance ? "Insufficient balance for reroll." : "Reroll uses ♦"}`
           : "First weekly roll each week is free."}
       </p>
     ),
@@ -459,16 +480,17 @@ export default function Board() {
   const reserveSlot = {
     slotLabel: "Reserve Slot",
     cover: slotCovers.reserve ?? null,
-    
+    footer: (
+      <p className={`text-center text-xs text-slate-500`}>Reservation uses ♦</p>
+    ),
     actions: (
       <div className="flex flex-wrap justify-center gap-3">
-        <p className={`text-center text-xs text-slate-500`}>Reservation uses ♦ from your balance.</p>
         <button
           type="button"
           onClick={() => setIsReserveDialogOpen(true)}
-          className="rounded-full bg-accent px-5 py-3 text-sm font-semibold text-black transition disabled:cursor-not-allowed disabled:opacity-60"
+          className="rounded-full border border-accent/30 bg-accent/10 px-5 py-3 text-sm font-semibold text-accent transition hover:border-accent/50 hover:bg-accent/20 disabled:cursor-not-allowed disabled:opacity-60"
         >
-          Change reserve
+          Change
         </button>
       </div>
     )
@@ -476,18 +498,18 @@ export default function Board() {
 
   return (
     <div className="mx-auto max-w-5xl space-y-6 px-4 py-8 text-white sm:px-6 lg:px-8">
-      <div className="rounded-[32px] border border-white/20 bg-slate-900/85 p-6 shadow-[0_35px_100px_-45px_rgba(0,0,0,0.9)]">
+      <div className="hidden rounded-[32px] border border-white/20 bg-slate-900/85 p-6 shadow-[0_35px_100px_-45px_rgba(0,0,0,0.9)] lg:block">
         <div className="flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between">
           <div>
             <h1 className="text-3xl font-semibold tracking-tight text-accent">Board</h1>
-            <p className="mt-2 max-w-2xl text-sm text-slate-300">
+            <p className="mt-2 hidden max-w-2xl text-sm text-slate-300 lg:block">
               Pick the next game and manage your library!
             </p>
           </div>
 
           <div className="grid w-full gap-2 sm:grid-cols-3 lg:w-auto lg:min-w-[420px]">
             <div className="flex min-h-[48px] items-center justify-end rounded-2xl border border-accent/20 bg-white/5 px-3 py-2 text-right">
-              <span className="text-xs uppercase tracking-wide text-slate-400">♦ Balance:</span>
+              <span className="text-xs uppercase tracking-wide text-slate-400">Balance:</span>
               <span className="ml-2 text-2xl font-semibold tracking-tight text-accent">♦{balance}</span>
             </div>
             <button
@@ -511,8 +533,31 @@ export default function Board() {
         <BoardSlotCard {...dailySlot} />
         <BoardSlotCard {...weeklySlot} />
         <div className="col-span-2 lg:col-span-1">
-          <div className="mx-auto w-full max-w-[calc(50%-0.5rem)] lg:max-w-none">
+          <div className="hidden lg:block">
             <BoardSlotCard {...reserveSlot} />
+          </div>
+
+          <div className="flex items-center justify-center gap-2 lg:hidden">
+            <button
+              type="button"
+              onClick={() => setIsPlayDialogOpen(true)}
+              className="inline-flex h-20 w-20 flex-col items-center justify-center rounded-2xl border border-accent/30 bg-accent/10 px-2 text-center text-[11px] font-semibold text-accent transition hover:border-accent/50 hover:bg-accent/20"
+            >
+              <Play size={26} />
+              <span className="mt-1 inline-flex h-[18px] items-center justify-center text-[14px] leading-[14px]">Record</span>
+            </button>
+
+            <div className="w-full max-w-[calc(50%-0.5rem)]">
+              <BoardSlotCard {...reserveSlot} />
+            </div>
+
+            <Link
+              to="/next-up/library"
+              className="inline-flex h-20 w-20 flex-col items-center justify-center rounded-2xl border border-accent/30 bg-accent/10 px-2 text-center text-[11px] font-semibold text-accent transition hover:border-accent/50 hover:bg-accent/20"
+            >
+              <BookOpen size={26} />
+              <span className="mt-1 inline-flex h-[18px] items-center justify-center text-[14px] leading-[14px]">Library</span>
+            </Link>
           </div>
         </div>
       </div>
@@ -698,9 +743,9 @@ export default function Board() {
                   className="w-full rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-white outline-none transition focus:border-accent focus:bg-white/10"
                 >
                   <option value="">Choose a game</option>
-                  {libraryGames.map((game) => (
+                  {reserveOptions.map((game) => (
                     <option key={game.id ?? game.title} value={game.id ?? ""}>
-                      {game.title} ({game.pool})
+                      {game.title}
                     </option>
                   ))}
                 </select>
@@ -722,7 +767,7 @@ export default function Board() {
               <button
                 type="button"
                 onClick={handleSetReserve}
-                disabled={isUpdatingReserve || !reserveSelection}
+                  disabled={isUpdatingReserve || !reserveSelection || isCurrentReserveSelection}
                 className="rounded-full bg-accent px-5 py-3 text-sm font-semibold text-black transition disabled:cursor-not-allowed disabled:opacity-60"
               >
                 {isUpdatingReserve ? "Saving..." : `Set reserve (♦${RESERVE_MOVE_COST})`}
