@@ -414,7 +414,7 @@ export default function Board() {
     slotLabel: "Daily Game",
     cover: slotCovers.daily ?? null,
     footer: (
-      <p className={`text-xs ${dailyRerollCost > balance ? "text-red-300" : "text-slate-500"}`}>
+      <p className={`text-center text-xs ${dailyRerollCost > balance ? "text-red-300" : "text-slate-500"}`}>
         {view?.dailyIsReroll
           ? `${dailyRerollCost > balance ? "Insufficient balance for reroll." : "Reroll uses ♦ from your balance."}`
           : "First daily roll each day is free."}
@@ -437,7 +437,7 @@ export default function Board() {
     slotLabel: "Weekly Game",
     cover: slotCovers.weekly ?? null,
     footer: (
-      <p className={`text-xs ${weeklyRerollCost > balance ? "text-red-300" : "text-slate-500"}`}>
+      <p className={`text-center text-xs ${weeklyRerollCost > balance ? "text-red-300" : "text-slate-500"}`}>
         {view?.weeklyIsReroll
           ? `${weeklyRerollCost > balance ? "Insufficient balance for reroll." : "Reroll uses ♦ from your balance."}`
           : "First weekly roll each week is free."}
@@ -459,10 +459,10 @@ export default function Board() {
   const reserveSlot = {
     slotLabel: "Reserve Slot",
     cover: slotCovers.reserve ?? null,
-    badge: hasSelectedGame(view?.reserveTitle) ? "Active" : undefined,
     
     actions: (
-      <div className="flex flex-wrap gap-3">
+      <div className="flex flex-wrap justify-center gap-3">
+        <p className={`text-center text-xs text-slate-500`}>Reservation uses ♦ from your balance.</p>
         <button
           type="button"
           onClick={() => setIsReserveDialogOpen(true)}
@@ -511,7 +511,9 @@ export default function Board() {
         <BoardSlotCard {...dailySlot} />
         <BoardSlotCard {...weeklySlot} />
         <div className="col-span-2 lg:col-span-1">
-          <BoardSlotCard {...reserveSlot} />
+          <div className="mx-auto w-full max-w-[calc(50%-0.5rem)] lg:max-w-none">
+            <BoardSlotCard {...reserveSlot} />
+          </div>
         </div>
       </div>
 

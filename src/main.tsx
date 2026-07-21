@@ -6,9 +6,18 @@ import App from "./App";
 import { initializeRuntimePreferences, registerConsoleToggles } from "./core/runtimePreferences";
 import "./styles/globals.css";
 
-registerSW({
-  immediate: true
-});
+if (import.meta.env.PROD) {
+  registerSW({
+    immediate: true
+  });
+} else if ("serviceWorker" in navigator) {
+  // Prevent stale cached assets from a previous preview/prod service worker during local HMR.
+  void navigator.serviceWorker.getRegistrations().then((registrations) => {
+    registrations.forEach((registration) => {
+      void registration.unregister();
+    });
+  });
+}
 
 initializeRuntimePreferences();
 registerConsoleToggles();
