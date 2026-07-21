@@ -2,6 +2,10 @@
 
 Cloudflare Worker proxy for IGDB search.
 
+Deployed endpoint:
+
+- `https://next-up-igdb-proxy.next-up-igdb.workers.dev`
+
 ## Endpoints
 
 - `GET /health`
@@ -62,3 +66,11 @@ npm run dev
 - Credentials are never exposed to the frontend.
 - CORS is controlled by `ALLOWED_ORIGINS` in `wrangler.toml`.
 - `search` uses retry/backoff for IGDB throttling and transient failures.
+
+## Troubleshooting
+
+- If `/search` returns `Token request failed (400)`, the worker can reach Twitch but the credentials are invalid or missing.
+- Ensure both secrets are set in Cloudflare Worker:
+  - `TWITCH_CLIENT_ID`
+  - `TWITCH_CLIENT_SECRET`
+- If your request tool sets `Origin`, it must be host-only (for example `http://localhost:5173`) and never include a path.

@@ -14,6 +14,8 @@ export interface Game {
   platforms?: string[];
   multiplayer: boolean;
   reserved: boolean;
+  igdbId?: number;
+  coverCacheKey?: string;
   createdAt: number;
   updatedAt: number;
 }
@@ -116,6 +118,30 @@ class NextUpDB extends Dexie {
           if (game.pool !== "daily" && game.pool !== "weekly" && game.pool !== "none") {
             game.reserved = game.pool === "reserve" ? true : Boolean(game.reserved);
             game.pool = game.pool === "reserve" ? "none" : "daily";
+          }
+        });
+      });
+
+    this.version(7)
+      .stores({
+        games: "++id, title, pool, reserved, *platforms, igdbId, coverCacheKey",
+        events: "++id, type, timestamp",
+        points: "++id, timestamp",
+        board: "id",
+        metadata: "key"
+      })
+      .upgrade(async (tx) => {
+        await tx.table("games").toCollection().modify((game: Partial<Game> & { id?: number; igdbId?: unknown; coverCacheKey?: unknown }) => {
+          const parsedIgdbId = Number(game.igdbId);
+
+          if (!Number.isFinite(parsedIgdbId) || parsedIgdbId <= 0) {
+            game.igdbId = undefined;
+          } else {
+            game.igdbId = Math.trunc(parsedIgdbId);
+          }
+
+          if (typeof game.coverCacheKey !== "string" || game.coverCacheKey.trim().length === 0) {
+            game.coverCacheKey = game.id ? `game_cover_${game.id}` : undefined;
           }
         });
       });

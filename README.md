@@ -124,12 +124,30 @@ Endpoints:
 - `GET /health`
 - `POST /search`
 
+Current deployed worker endpoint:
+
+- `https://next-up-igdb-proxy.next-up-igdb.workers.dev`
+
+Frontend Phase 2 client configuration:
+
+- Optional env var: `VITE_IGDB_WORKER_URL`
+- If unset, the app defaults to the deployed endpoint above.
+
 Example request:
 
 ```bash
 curl -X POST http://127.0.0.1:8787/search \
 	-H "Content-Type: application/json" \
 	-H "Origin: http://localhost:5173" \
+	-d '{"query":"Elden Ring","limit":10}'
+```
+
+Production smoke test:
+
+```bash
+curl -X POST https://next-up-igdb-proxy.next-up-igdb.workers.dev/search \
+	-H "Content-Type: application/json" \
+	-H "Origin: https://thedoctorofall.github.io" \
 	-d '{"query":"Elden Ring","limit":10}'
 ```
 

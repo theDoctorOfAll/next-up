@@ -11,6 +11,7 @@ import {
 import { recordEvent } from "../../database/repositories/eventRepository";
 import { getBoard, saveBoard } from "../../database/repositories/boardRepository";
 import { getPointBalance, spendPoints } from "../../database/repositories/pointRepository";
+import { invalidateGameCoverCache } from "../../database/repositories/gameCoverRepository";
 import { assertValidPool } from "./validateGame";
 
 const ADD_GAME_COST = 500;
@@ -110,6 +111,8 @@ export async function addGameInternal(
   const duplicate = games.find((game) => sameTitle(game.title, title));
 
   if (duplicate?.id) {
+    const changedTitle = duplicate.title !== title;
+
     if (duplicate.pool !== poolInput || duplicate.title !== title) {
       await updateGame({
         ...duplicate,
@@ -126,6 +129,10 @@ export async function addGameInternal(
         multiplayer: multiplayerInput,
         reason: "Library add repaired existing game"
       });
+
+      if (changedTitle) {
+        await invalidateGameCoverCache(duplicate.id);
+      }
     }
 
     return duplicate.id;
@@ -206,6 +213,11 @@ export async function updateGameInLibrary(
   };
 
   await updateGame(updatedGame);
+
+  if (changedTitle) {
+    await invalidateGameCoverCache(updatedGame.id!);
+  }
+
   await recordEvent("GAME_UPDATED", {
     id: updatedGame.id,
     title: updatedGame.title,
@@ -284,6 +296,7 @@ export async function deleteGameFromLibrary(id: number): Promise<void> {
   }
 
   await saveBoard(board);
+  await invalidateGameCoverCache(id);
   await deleteGame(id);
   await recordEvent("GAME_DELETED", {
     id,
@@ -361,6 +374,7 @@ export async function ensureGameIntegrity() {
       continue;
     }
 
+    await invalidateGameCoverCache(game.id);
     await deleteGame(game.id);
     await recordEvent("GAME_DELETED", {
       id: game.id,

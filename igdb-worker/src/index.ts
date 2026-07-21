@@ -37,6 +37,13 @@ interface TwitchTokenState {
   expiresAtMs: number;
 }
 
+interface TwitchTokenResponse {
+  access_token?: string;
+  expires_in?: number;
+  status?: number;
+  message?: string;
+}
+
 let tokenState: TwitchTokenState | null = null;
 
 const IGDB_API_URL = "https://api.igdb.com/v4/games";
@@ -154,6 +161,14 @@ function toCoverUrl(imageId?: string) {
   return `https://images.igdb.com/igdb/image/upload/t_cover_big/${imageId}.jpg`;
 }
 
+function requireEnvValue(value: string | undefined, name: string) {
+  if (!value || !value.trim()) {
+    throw new Error(`${name} is not configured in worker secrets.`);
+  }
+
+  return value.trim();
+}
+
 async function getTwitchAccessToken(env: Env) {
   const nowMs = Date.now();
 
@@ -161,9 +176,12 @@ async function getTwitchAccessToken(env: Env) {
     return tokenState.accessToken;
   }
 
+  const clientId = requireEnvValue(env.TWITCH_CLIENT_ID, "TWITCH_CLIENT_ID");
+  const clientSecret = requireEnvValue(env.TWITCH_CLIENT_SECRET, "TWITCH_CLIENT_SECRET");
+
   const params = new URLSearchParams({
-    client_id: env.TWITCH_CLIENT_ID,
-    client_secret: env.TWITCH_CLIENT_SECRET,
+    client_id: clientId,
+    client_secret: clientSecret,
     grant_type: "client_credentials"
   });
 
@@ -172,10 +190,20 @@ async function getTwitchAccessToken(env: Env) {
   });
 
   if (!response.ok) {
-    throw new Error(`Token request failed (${response.status}).`);
+    let detail = "";
+
+    try {
+      const data = await response.json<TwitchTokenResponse>();
+      detail = data.message?.trim() ?? "";
+    } catch {
+      // Keep fallback message when Twitch doesn't return JSON.
+    }
+
+    const reason = detail ? `: ${detail}` : "";
+    throw new Error(`Token request failed (${response.status})${reason}`);
   }
 
-  const data = await response.json<{ access_token?: string; expires_in?: number }>();
+  const data = await response.json<TwitchTokenResponse>();
 
   if (!data.access_token || !data.expires_in) {
     throw new Error("Token response missing required fields.");

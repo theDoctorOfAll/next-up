@@ -4,8 +4,8 @@ compatibility_date = "2026-07-20"
 
 [vars]
 # Comma-separated allowlist for browser origins.
-# Example: "http://localhost:5173,https://your-username.github.io"
-ALLOWED_ORIGINS = "http://localhost:5173"
+# Example: "http://localhost:5173,https://thedoctorofall.github.io"
+ALLOWED_ORIGINS = "http://localhost:5173,https://thedoctorofall.github.io"
 
 # Optional default origin when no Origin header is present.
 # Useful for non-browser smoke tests.
