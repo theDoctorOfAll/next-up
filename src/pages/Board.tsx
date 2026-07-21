@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useLocation, useNavigate } from "react-router-dom";
 import { BookOpen, Play } from "lucide-react";
+import { formatFullDataRestoreSummary, type FullDataBackupRestoreResult } from "../database/repositories/backupRepository";
 import { rollDailyGame } from "../domain/useCases/rollDailyGame";
 import { rollWeeklyGame } from "../domain/useCases/rollWeeklyGame";
 import { recordPlaySession } from "../domain/useCases/recordPlaySession";
@@ -10,6 +11,7 @@ import { clearReserveGame, getCurrentBoard, setReserveGame } from "../domain/ser
 import { evaluatePlayRules, getMultiplayerReward } from "../domain/rules/rulesEngine";
 import { getPointBalance } from "../database/repositories/pointRepository";
 import { getAllGames } from "../database/repositories/gameRepository";
+import { getCurrentGameMode, type GameMode } from "../database/repositories/gameModeRepository";
 import { getCachedGameCover, type GameCoverCacheValue } from "../database/repositories/gameCoverRepository";
 import type { Game } from "../database/db";
 import TransientToast from "../components/TransientToast";
@@ -23,6 +25,7 @@ const DAILY_REROLL_COST = 5;
 const WEEKLY_REROLL_COST = 10;
 const RESERVE_MOVE_COST = 25;
 const MAX_MULTIPLAYER_PLAYERS = 10;
+const COMPLETION_MODE_COMPLETION_REWARD = 150;
 
 type PlaySessionPool = "daily" | "weekly" | "reserve";
 
@@ -118,6 +121,8 @@ function getSessionOptions(view: BoardView | null): PlaySessionOption[] {
 }
 
 export default function Board() {
+  const location = useLocation();
+  const navigate = useNavigate();
   const [view, setView] = useState<BoardView | null>(null);
   const [balance, setBalance] = useState(0);
   const [slotCovers, setSlotCovers] = useState<Partial<Record<PlaySessionPool, GameCoverCacheValue | null>>>({});
@@ -129,6 +134,7 @@ export default function Board() {
   const [libraryGames, setLibraryGames] = useState<Game[]>([]);
   const [reserveSelection, setReserveSelection] = useState("");
   const [message, setMessage] = useState<string | null>(null);
+  const [gameMode, setGameMode] = useState<GameMode>("standard");
   const [isRecordingSession, setIsRecordingSession] = useState(false);
   const [isRollingDaily, setIsRollingDaily] = useState(false);
   const [isRollingWeekly, setIsRollingWeekly] = useState(false);
@@ -136,6 +142,7 @@ export default function Board() {
   const [isPlayDialogOpen, setIsPlayDialogOpen] = useState(false);
   const [isReserveDialogOpen, setIsReserveDialogOpen] = useState(false);
   const [projectedSessionReward, setProjectedSessionReward] = useState<number | null>(null);
+  const [markPlayedGameCompleted, setMarkPlayedGameCompleted] = useState(false);
 
   const sessionOptions = useMemo(() => getSessionOptions(view), [view]);
   const selectedSessionOption = sessionOptions.find((option) => option.pool === playSessionPool);
@@ -150,6 +157,23 @@ export default function Board() {
     [libraryGames]
   );
   const selectedMultiplayerGame = multiplayerOptions.find((game) => game.id?.toString() === multiplayerGameId);
+  const selectedSessionGameId =
+    playSessionPool === "daily"
+      ? view?.dailyGameId
+      : playSessionPool === "weekly"
+        ? view?.weeklyGameId
+        : playSessionPool === "reserve"
+          ? view?.reserveGameId
+          : undefined;
+  const selectedSessionGame = selectedSessionGameId
+    ? libraryGames.find((game) => game.id === selectedSessionGameId)
+    : undefined;
+  const isCompletionMode = gameMode === "completion";
+  const canMarkSelectedGameCompleted = Boolean(selectedSessionGame && !selectedSessionGame.completed);
+  const projectedCompletionBonus = isCompletionMode && markPlayedGameCompleted && canMarkSelectedGameCompleted
+    ? COMPLETION_MODE_COMPLETION_REWARD
+    : 0;
+  const projectedTotalReward = (projectedSessionReward ?? 0) + projectedCompletionBonus;
   const playtimeBonus = getPlaytimeBonus(playtimeMinutes);
   const projectedPoolBonus = projectedSessionReward === null ? null : Math.max(0, projectedSessionReward - playtimeBonus);
   const multiplayerReward = getMultiplayerReward(playerCount);
@@ -159,10 +183,11 @@ export default function Board() {
   const isCurrentReserveSelection = view?.reserveGameId !== undefined && selectedReserveGameId === view.reserveGameId;
 
   async function refreshBoard() {
-    const [nextView, nextBalance, nextGames] = await Promise.all([
+    const [nextView, nextBalance, nextGames, nextMode] = await Promise.all([
       getBoardView(),
       getPointBalance(),
-      getAllGames()
+      getAllGames(),
+      getCurrentGameMode()
     ]);
 
     const [dailyCover, weeklyCover, reserveCover] = await Promise.all([
@@ -174,6 +199,7 @@ export default function Board() {
     setView(nextView);
     setBalance(nextBalance);
     setLibraryGames(nextGames);
+    setGameMode(nextMode);
     setSlotCovers({
       daily: dailyCover.cover,
       weekly: weeklyCover.cover,
@@ -202,6 +228,15 @@ export default function Board() {
   }, [playSessionPool, sessionOptions]);
 
   useEffect(() => {
+    if (!isCompletionMode || isMultiplayerLogging || !selectedSessionGame) {
+      setMarkPlayedGameCompleted(false);
+      return;
+    }
+
+    setMarkPlayedGameCompleted((current) => (selectedSessionGame.completed ? false : current));
+  }, [isCompletionMode, isMultiplayerLogging, selectedSessionGame]);
+
+  useEffect(() => {
     if (multiplayerOptions.length === 0) {
       setMultiplayerGameId("");
       return;
@@ -225,9 +260,23 @@ export default function Board() {
   }, [message]);
 
   useEffect(() => {
+    const routeState = location.state as {
+      restoredBackup?: FullDataBackupRestoreResult;
+      restoredBackupMessage?: string;
+    } | null;
+
+    if (!routeState?.restoredBackup) {
+      return;
+    }
+
+    setMessage(routeState.restoredBackupMessage ?? formatFullDataRestoreSummary(routeState.restoredBackup));
+    navigate(location.pathname, { replace: true, state: null });
+  }, [location.pathname, location.state, navigate]);
+
+  useEffect(() => {
     const headerItems = [{
       id: "balance",
-      label: "Balance",
+      /*label: "Balance",*/
       value: `♦${balance}`
     }];
 
@@ -373,7 +422,11 @@ export default function Board() {
     setIsRecordingSession(true);
 
     try {
-      const result = await recordPlaySession(playSessionPool, normalizedMinutes);
+      const result = await recordPlaySession(
+        playSessionPool,
+        normalizedMinutes,
+        isCompletionMode && markPlayedGameCompleted
+      );
 
       if (!result.success) {
         setMessage(result.message ?? "Play session could not be recorded.");
@@ -381,8 +434,16 @@ export default function Board() {
       }
 
       setPlaytimeMinutes(0);
-      setMessage(`Recorded ${result.data.playtimeMinutes} minutes for ${result.data.title}: +♦${result.data.reward}.`);
+      const completionSuffix = isCompletionMode && markPlayedGameCompleted
+        ? " Marked as completed."
+        : "";
+      const completionReward = isCompletionMode && markPlayedGameCompleted && canMarkSelectedGameCompleted
+        ? COMPLETION_MODE_COMPLETION_REWARD
+        : 0;
+      const totalReward = result.data.reward + completionReward;
+      setMessage(`Recorded ${result.data.playtimeMinutes} minutes for ${result.data.title}: +♦${totalReward}.${completionSuffix}`);
       setIsPlayDialogOpen(false);
+      setMarkPlayedGameCompleted(false);
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Could not record this play session.");
     } finally {
@@ -660,11 +721,34 @@ export default function Board() {
                     onChange={(event) => setPlaytimeMinutes(normalizePlaytimeMinutes(Number(event.target.value)))}
                     className="w-full accent-accent"
                   />
-                  <p className="text-xs text-slate-500">Playtime bonus from this session: +♦{playtimeBonus}.</p>
-                  {playSessionPool === "daily" || playSessionPool === "weekly" ? (
-                    <p className="text-xs text-slate-500">{playSessionPool === "daily" ? "Daily" : "Weekly"} bonus from this session: +♦{projectedPoolBonus ?? 0}.</p>
+
+                  {isCompletionMode ? (
+                    <label className="flex items-center gap-3 rounded-2xl border border-accent/20 bg-accent/5 px-4 py-3 text-sm text-white">
+                      <input
+                        type="checkbox"
+                        checked={markPlayedGameCompleted}
+                        onChange={(event) => setMarkPlayedGameCompleted(event.target.checked)}
+                        disabled={!canMarkSelectedGameCompleted}
+                        className="h-4 w-4 accent-accent disabled:cursor-not-allowed"
+                      />
+                      <span>
+                        {canMarkSelectedGameCompleted
+                          ? "Mark this game complete"
+                          : "Selected game is already complete"}
+                      </span>
+                    </label>
                   ) : null}
-                  <p className="text-xs text-slate-400">Total reward from this session: +♦{projectedSessionReward ?? 0}.</p>
+
+                  <div className="space-y-1">
+                    <p className="text-xs text-slate-500">Playtime bonus from this session: +♦{playtimeBonus}.</p>
+                    {playSessionPool === "daily" || playSessionPool === "weekly" ? (
+                      <p className="text-xs text-slate-500">{playSessionPool === "daily" ? "Daily" : "Weekly"} bonus from this session: +♦{projectedPoolBonus ?? 0}.</p>
+                    ) : null}
+                    {projectedCompletionBonus === 150 ? (
+                      <p className="text-xs text-slate-500">Completion bonus: +♦150.</p>
+                    ) : null}
+                    <p className="text-xs text-slate-400">Total reward from this session: +♦{projectedTotalReward}.</p>
+                  </div>
                 </div>
               ) : (
                 <div className="space-y-3">

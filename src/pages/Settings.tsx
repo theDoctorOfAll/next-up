@@ -1,12 +1,17 @@
 import { useEffect, useRef, useState } from "react";
-import { Link } from "react-router-dom";
-import { clearEventHistory, addPoints } from "../database/services";
+import { Link, useNavigate } from "react-router-dom";
+import { type GameMode, getGameModeState, setGameMode } from "../database/repositories/gameModeRepository";
+import { resetLocalState, addPoints } from "../database/services";
+import { formatFullDataRestoreSummary, restoreFullDataBackup } from "../database/repositories/backupRepository";
+import { storeGameCoverCache } from "../database/repositories/gameCoverRepository";
+import { markOnboardingCompleted } from "../database/repositories/onboardingRepository";
 import { getPointBalance } from "../database/repositories/pointRepository";
 import { getBoard } from "../database/repositories/boardRepository";
 import { addGame, getAllGames, updateGame } from "../database/repositories/gameRepository";
 import { db, type Game, type GamePool } from "../database/db";
 import { advanceClockByDays, getClockOffsetMs } from "../core/clock";
-import { isDeveloperModeEnabled, isHighContrastModeEnabled, setHighContrastModeEnabled } from "../core/runtimePreferences";
+import { isDeveloperModeEnabled, isHighContrastModeEnabled, setDeveloperModeEnabled, setHighContrastModeEnabled } from "../core/runtimePreferences";
+import { searchIgdbByTitle } from "../services/igdbClient";
 import TransientToast from "../components/TransientToast";
 
 function normalizeTitle(value: string) {
@@ -16,6 +21,22 @@ function normalizeTitle(value: string) {
 function parseBoolean(value: string) {
   const normalized = value.trim().toLocaleLowerCase();
   return normalized === "true" || normalized === "1" || normalized === "yes";
+}
+
+function parseOptionalIgdbId(value: string) {
+  const trimmed = value.trim();
+
+  if (!trimmed) {
+    return undefined;
+  }
+
+  const parsed = Number(trimmed);
+
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    return undefined;
+  }
+
+  return Math.trunc(parsed);
 }
 
 function toCsvCell(value: string) {
@@ -95,7 +116,19 @@ function parsePool(value: string): GamePool {
   return pool;
 }
 
+type ReserveChoice = {
+  normalizedTitle: string;
+  title: string;
+};
+
+type ImportedCoverTarget = {
+  gameId: number;
+  title: string;
+  igdbId: number;
+};
+
 export default function Settings() {
+  const navigate = useNavigate();
   const [balance, setBalance] = useState(0);
   const [message, setMessage] = useState<string | null>(null);
   const [isResetting, setIsResetting] = useState(false);
@@ -103,13 +136,30 @@ export default function Settings() {
   const [isJumpingDay, setIsJumpingDay] = useState(false);
   const [isExportingLibrary, setIsExportingLibrary] = useState(false);
   const [isExportingAllData, setIsExportingAllData] = useState(false);
+  const [isImportingAllData, setIsImportingAllData] = useState(false);
   const [isImportingLibrary, setIsImportingLibrary] = useState(false);
+  const [reserveConflictChoices, setReserveConflictChoices] = useState<ReserveChoice[]>([]);
+  const [reserveConflictSelection, setReserveConflictSelection] = useState("");
+  const [gameMode, setGameModeState] = useState<GameMode>("standard");
+  const [nextModeChangeAt, setNextModeChangeAt] = useState<number | null>(null);
+  const [canChangeMode, setCanChangeMode] = useState(true);
+  const [isChangingMode, setIsChangingMode] = useState(false);
   const [isHighContrastMode, setIsHighContrastMode] = useState(() => isHighContrastModeEnabled());
-  const [isDeveloperMode] = useState(() => isDeveloperModeEnabled());
+  const [isDeveloperMode, setIsDeveloperMode] = useState(() => isDeveloperModeEnabled());
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const fullDataInputRef = useRef<HTMLInputElement | null>(null);
+  const reserveConflictResolverRef = useRef<((value: string | null) => void) | null>(null);
 
   async function refreshSettings() {
-    setBalance(await getPointBalance());
+    const [nextBalance, modeState] = await Promise.all([
+      getPointBalance(),
+      getGameModeState()
+    ]);
+
+    setBalance(nextBalance);
+    setGameModeState(modeState.mode);
+    setCanChangeMode(modeState.canChange);
+    setNextModeChangeAt(modeState.nextChangeAt);
   }
 
   useEffect(() => {
@@ -168,7 +218,7 @@ export default function Settings() {
   }
 
   async function handleReset() {
-    if (!window.confirm("Reset game history, board state, and ♦ balance? This cannot be undone.")) {
+    if (!window.confirm("Reset all local game data and return to onboarding? This cannot be undone.")) {
       return;
     }
 
@@ -176,9 +226,8 @@ export default function Settings() {
     setMessage(null);
 
     try {
-      await clearEventHistory();
-      await refreshSettings();
-      setMessage("Board and economy state reset.");
+      await resetLocalState();
+      navigate("/next-up/onboarding", { replace: true });
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Could not reset settings.");
     } finally {
@@ -203,13 +252,81 @@ export default function Settings() {
     }
   }
 
+  async function handleChangeMode(nextMode: GameMode) {
+    setIsChangingMode(true);
+    setMessage(null);
+
+    try {
+      const modeState = await setGameMode(nextMode);
+      setGameModeState(modeState.mode);
+      setCanChangeMode(modeState.canChange);
+      setNextModeChangeAt(modeState.nextChangeAt);
+      setMessage(`Switched to ${nextMode === "completion" ? "Completion" : "Standard"} mode.`);
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Could not change the game mode.");
+    } finally {
+      setIsChangingMode(false);
+    }
+  }
+
+  function clearReserveConflictDialog() {
+    setReserveConflictChoices([]);
+    setReserveConflictSelection("");
+    reserveConflictResolverRef.current = null;
+  }
+
+  function requestReserveConflictSelection(choices: ReserveChoice[]) {
+    setReserveConflictChoices(choices);
+    setReserveConflictSelection(choices[0]?.normalizedTitle ?? "");
+
+    return new Promise<string | null>((resolve) => {
+      reserveConflictResolverRef.current = resolve;
+    });
+  }
+
+  function handleReserveConflictCancel() {
+    reserveConflictResolverRef.current?.(null);
+    clearReserveConflictDialog();
+  }
+
+  function handleReserveConflictConfirm() {
+    if (!reserveConflictSelection) {
+      return;
+    }
+
+    reserveConflictResolverRef.current?.(reserveConflictSelection);
+    clearReserveConflictDialog();
+  }
+
+  async function fetchImportedCoverFromIgdb(target: ImportedCoverTarget) {
+    const response = await searchIgdbByTitle(target.title, { limit: 20 });
+    const candidates = response.selected
+      ? [response.selected, ...response.alternatives]
+      : response.alternatives;
+    const matched = candidates.find((candidate) => candidate.id === target.igdbId);
+
+    if (!matched) {
+      return false;
+    }
+
+    await storeGameCoverCache(target.gameId, {
+      igdbId: matched.id,
+      imageUrl: matched.imageUrl,
+      imageId: matched.imageId,
+      confidence: matched.confidence,
+      searchQuery: target.title
+    });
+
+    return true;
+  }
+
   async function handleExportLibrary() {
     setIsExportingLibrary(true);
     setMessage(null);
 
     try {
       const games = await getAllGames();
-      const lines = ["title,pool,weight,platforms,multiplayer,reserved"];
+      const lines = ["title,pool,weight,platforms,multiplayer,reserved,completed,igdbId"];
 
       for (const game of games) {
         lines.push(
@@ -219,7 +336,9 @@ export default function Settings() {
             toCsvCell(String(game.weight ?? 0)),
             toCsvCell((game.platforms ?? []).join(";")),
             toCsvCell(String(Boolean(game.multiplayer))),
-            toCsvCell(String(Boolean(game.reserved)))
+            toCsvCell(String(Boolean(game.reserved))),
+            toCsvCell(String(Boolean(game.completed))),
+            toCsvCell(game.igdbId ? String(game.igdbId) : "")
           ].join(",")
         );
       }
@@ -285,6 +404,30 @@ export default function Settings() {
     }
   }
 
+  async function handleImportAllData(event: React.ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
+
+    if (!file) {
+      return;
+    }
+
+    setIsImportingAllData(true);
+    setMessage(null);
+
+    try {
+      const text = await file.text();
+      const result = await restoreFullDataBackup(text);
+      await markOnboardingCompleted();
+      await refreshSettings();
+      setMessage(formatFullDataRestoreSummary(result));
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Could not restore the full data backup.");
+    } finally {
+      event.target.value = "";
+      setIsImportingAllData(false);
+    }
+  }
+
   async function handleImportLibrary(event: React.ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0];
 
@@ -316,13 +459,54 @@ export default function Settings() {
         weight: header.indexOf("weight"),
         platforms: header.indexOf("platforms"),
         multiplayer: header.indexOf("multiplayer"),
-        reserved: header.indexOf("reserved")
+        reserved: header.indexOf("reserved"),
+        completed: header.indexOf("completed"),
+        igdbId: header.indexOf("igdbid")
       };
+
+      const reserveChoicesByTitle = new Map<string, string>();
+
+      for (let rowIndex = 1; rowIndex < rows.length; rowIndex += 1) {
+        const row = rows[rowIndex];
+        const title = (row[indexes.title] ?? "").trim();
+
+        if (!title) {
+          continue;
+        }
+
+        if (!parseBoolean(row[indexes.reserved] ?? "false")) {
+          continue;
+        }
+
+        const normalized = normalizeTitle(title);
+
+        if (!reserveChoicesByTitle.has(normalized)) {
+          reserveChoicesByTitle.set(normalized, title);
+        }
+      }
+
+      const reserveChoices = Array.from(reserveChoicesByTitle.entries()).map(([normalizedTitle, title]) => ({ normalizedTitle, title }));
+      let selectedReservedTitle = reserveChoices.length === 1 ? reserveChoices[0]?.normalizedTitle : undefined;
+
+      if (reserveChoices.length > 1) {
+        const selected = await requestReserveConflictSelection(reserveChoices);
+
+        if (!selected) {
+          setMessage("CSV import cancelled.");
+          return;
+        }
+
+        selectedReservedTitle = selected;
+      }
 
       const existingGames = await getAllGames();
       const existingByTitle = new Map(existingGames.map((game) => [normalizeTitle(game.title), game]));
+      const coverFetchTargetsByGameId = new Map<number, ImportedCoverTarget>();
       let created = 0;
       let updated = 0;
+      let hasAnyChange = false;
+      let hasReservedFieldChange = false;
+      let hasNonReservedFieldChange = false;
 
       for (let rowIndex = 1; rowIndex < rows.length; rowIndex += 1) {
         const row = rows[rowIndex];
@@ -337,9 +521,18 @@ export default function Settings() {
         const weight = Number.isFinite(weightValue) ? Math.round(weightValue) : 0;
         const platforms = parsePlatforms(row[indexes.platforms] ?? "");
         const multiplayer = parseBoolean(row[indexes.multiplayer] ?? "false");
-        const reserved = parseBoolean(row[indexes.reserved] ?? "false");
+        const reservedFromCsv = parseBoolean(row[indexes.reserved] ?? "false");
         const normalized = normalizeTitle(title);
+        const reserved = selectedReservedTitle
+          ? (reservedFromCsv && normalized === selectedReservedTitle)
+          : reservedFromCsv;
         const existing = existingByTitle.get(normalized);
+        const completed = indexes.completed >= 0
+          ? parseBoolean(row[indexes.completed] ?? "false")
+          : (existing?.completed ?? false);
+        const igdbId = indexes.igdbId >= 0
+          ? parseOptionalIgdbId(row[indexes.igdbId] ?? "")
+          : existing?.igdbId;
 
         if (existing?.id) {
           const nextGame: Game = {
@@ -350,11 +543,43 @@ export default function Settings() {
             platforms,
             multiplayer,
             reserved,
+            completed,
+            igdbId,
             updatedAt: Date.now()
           };
 
+          const titleChanged = existing.title !== nextGame.title;
+          const poolChanged = existing.pool !== nextGame.pool;
+          const weightChanged = existing.weight !== nextGame.weight;
+          const platformsChanged = JSON.stringify(existing.platforms ?? []) !== JSON.stringify(nextGame.platforms ?? []);
+          const multiplayerChanged = existing.multiplayer !== nextGame.multiplayer;
+          const completedChanged = existing.completed !== nextGame.completed;
+          const igdbIdChanged = (existing.igdbId ?? undefined) !== (nextGame.igdbId ?? undefined);
+          const reservedChanged = existing.reserved !== nextGame.reserved;
+
+          if (titleChanged || poolChanged || weightChanged || platformsChanged || multiplayerChanged || completedChanged || igdbIdChanged || reservedChanged) {
+            hasAnyChange = true;
+          }
+
+          if (reservedChanged) {
+            hasReservedFieldChange = true;
+          }
+
+          if (titleChanged || poolChanged || weightChanged || platformsChanged || multiplayerChanged || completedChanged || igdbIdChanged) {
+            hasNonReservedFieldChange = true;
+          }
+
           await updateGame(nextGame);
           existingByTitle.set(normalized, nextGame);
+
+          if (nextGame.id && igdbId) {
+            coverFetchTargetsByGameId.set(nextGame.id, {
+              gameId: nextGame.id,
+              title: nextGame.title,
+              igdbId
+            });
+          }
+
           updated += 1;
           continue;
         }
@@ -366,16 +591,89 @@ export default function Settings() {
           platforms,
           multiplayer,
           reserved,
+          completed,
+          igdbId,
           createdAt: Date.now(),
           updatedAt: Date.now()
         };
 
+        hasAnyChange = true;
+        hasNonReservedFieldChange = true;
+        if (reserved) {
+          hasReservedFieldChange = true;
+        }
+
         const id = await addGame(nextGame);
         existingByTitle.set(normalized, { ...nextGame, id });
+
+        if (igdbId) {
+          coverFetchTargetsByGameId.set(id, {
+            gameId: id,
+            title: nextGame.title,
+            igdbId
+          });
+        }
+
         created += 1;
       }
 
-      setMessage(`Imported library CSV: ${created} added, ${updated} updated.`);
+      if (selectedReservedTitle) {
+        for (const game of existingByTitle.values()) {
+          const normalized = normalizeTitle(game.title);
+
+          if (!game.id || normalized === selectedReservedTitle || !game.reserved) {
+            continue;
+          }
+
+          const nextGame: Game = {
+            ...game,
+            reserved: false,
+            updatedAt: Date.now()
+          };
+
+          hasAnyChange = true;
+          hasReservedFieldChange = true;
+
+          await updateGame(nextGame);
+          existingByTitle.set(normalized, nextGame);
+          updated += 1;
+        }
+      }
+
+      const isReserveOnlyImportChange = hasAnyChange && hasReservedFieldChange && !hasNonReservedFieldChange;
+      let coverFetchAttempted = 0;
+      let coverFetchSucceeded = 0;
+      let coverFetchFailed = 0;
+
+      for (const target of coverFetchTargetsByGameId.values()) {
+        coverFetchAttempted += 1;
+
+        try {
+          const matched = await fetchImportedCoverFromIgdb(target);
+
+          if (matched) {
+            coverFetchSucceeded += 1;
+          } else {
+            coverFetchFailed += 1;
+          }
+        } catch {
+          coverFetchFailed += 1;
+        }
+      }
+
+      const coverSummary = coverFetchAttempted > 0
+        ? ` Cover fetch: ${coverFetchSucceeded} matched, ${coverFetchFailed} failed.`
+        : "";
+
+      if (isReserveOnlyImportChange && !isDeveloperModeEnabled()) {
+        setDeveloperModeEnabled(true);
+        setIsDeveloperMode(true);
+        setMessage(`Hello, prospective cheater! Nice try with the reserved game. Developer mode unlocked.${coverSummary}`);
+      } else if (isReserveOnlyImportChange) {
+        setMessage(`Imported library CSV: ${created} added, ${updated} updated. Reserve-only CSV edits detected.${coverSummary}`);
+      } else {
+        setMessage(`Imported library CSV: ${created} added, ${updated} updated.${coverSummary}`);
+      }
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Could not import the game library CSV.");
     } finally {
@@ -461,6 +759,42 @@ export default function Settings() {
       <div className="rounded-[32px] border border-white/20 bg-slate-900/85 p-6 shadow-[0_35px_100px_-45px_rgba(0,0,0,0.9)]">
         <div className="space-y-4">
           <div>
+            <h2 className="text-xl font-semibold tracking-tight text-accent">Game mode</h2>
+            <p className="mt-2 text-sm text-slate-300">
+              Game mode can be changed freely with a one-week cooldown.
+            </p>
+            {!canChangeMode && nextModeChangeAt ? (
+              <p className="mt-2 text-sm text-amber-200">Mode can be changed at {new Date(nextModeChangeAt).toLocaleString()}.</p>
+            ) : null}
+          </div>
+
+          <div className="grid gap-3 md:grid-cols-2">
+            <button
+              type="button"
+              onClick={() => void handleChangeMode("standard")}
+              disabled={isChangingMode || gameMode === "standard" || !canChangeMode}
+              className={`rounded-2xl border px-4 py-4 text-left transition ${gameMode === "standard" ? "border-accent/40 bg-accent/10 text-white" : "border-white/10 bg-white/5 text-slate-200 hover:border-accent/30 hover:bg-white/10"} disabled:cursor-not-allowed disabled:opacity-60`}
+            >
+              <p className="text-base font-semibold">Exploration</p>
+              <p className="mt-2 text-sm text-slate-300">{(gameMode === "standard" ? "Current ruleset with normal add-game cost and all eligible pool games available for rolls." : "All games in Daily and Weekly pools can be rolled. Adding games costs ♦500, but finishing them does not award points.")}</p>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => void handleChangeMode("completion")}
+              disabled={isChangingMode || gameMode === "completion" || !canChangeMode}
+              className={`rounded-2xl border px-4 py-4 text-left transition ${gameMode === "completion" ? "border-accent/40 bg-accent/10 text-white" : "border-white/10 bg-white/5 text-slate-200 hover:border-accent/30 hover:bg-white/10"} disabled:cursor-not-allowed disabled:opacity-60`}
+            >
+              <p className="text-base font-semibold">Completion</p>
+              <p className="mt-2 text-sm text-slate-300">{(gameMode === "standard" ? "Only incomplete daily and weekly games can roll. Adding games costs ♦1000, but finishing them awards ♦150." : "Current ruleset with higher add-game cost and game completion awards; only incomplete games are available for rolls.")}</p>
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <div className="rounded-[32px] border border-white/20 bg-slate-900/85 p-6 shadow-[0_35px_100px_-45px_rgba(0,0,0,0.9)]">
+        <div className="space-y-4">
+          <div>
             <h2 className="text-xl font-semibold tracking-tight text-accent">Library CSV</h2>
             <p className="mt-2 text-sm text-slate-300">
               Export your current library to CSV or import a CSV to add/update games by title.
@@ -502,7 +836,7 @@ export default function Settings() {
           <div>
             <h2 className="text-xl font-semibold tracking-tight text-accent">Full data export</h2>
             <p className="mt-2 text-sm text-slate-300">
-              Export all persisted data in one JSON file, including library, event log, current board, points ledger, and metadata.
+              Export all persisted data in one JSON file, including library, event log, current board, points ledger, and metadata, or restore the same format onto this device.
             </p>
           </div>
 
@@ -515,11 +849,73 @@ export default function Settings() {
             >
               {isExportingAllData ? "Exporting..." : "Export full data (JSON)"}
             </button>
+
+            <button
+              type="button"
+              onClick={() => fullDataInputRef.current?.click()}
+              disabled={isImportingAllData}
+              className="rounded-full border border-emerald-400/30 bg-emerald-500/10 px-5 py-3 text-sm font-semibold text-emerald-300 transition hover:border-emerald-400/50 hover:bg-emerald-500/20 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              {isImportingAllData ? "Restoring..." : "Restore full data (JSON)"}
+            </button>
           </div>
+
+          <input
+            ref={fullDataInputRef}
+            type="file"
+            accept=".json,application/json"
+            onChange={(event) => void handleImportAllData(event)}
+            className="hidden"
+          />
         </div>
       </div>
 
       <TransientToast message={message} onClose={() => setMessage(null)} />
+
+      {reserveConflictChoices.length > 0 ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/75 px-4">
+          <div className="w-full max-w-lg rounded-3xl border border-white/20 bg-slate-900/95 p-6 shadow-[0_35px_100px_-45px_rgba(0,0,0,0.9)]">
+            <h2 className="text-xl font-semibold tracking-tight text-accent">Choose reserve game</h2>
+            <p className="mt-2 text-sm text-slate-300">
+              Your CSV marks multiple games as reserved. Select one game to keep in reserve.
+            </p>
+
+            <fieldset className="mt-5 space-y-2">
+              {reserveConflictChoices.map((choice) => (
+                <label key={choice.normalizedTitle} className="flex items-center gap-3 rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-slate-100">
+                  <input
+                    type="radio"
+                    name="reserve-conflict"
+                    value={choice.normalizedTitle}
+                    checked={reserveConflictSelection === choice.normalizedTitle}
+                    onChange={(event) => setReserveConflictSelection(event.target.value)}
+                    className="h-4 w-4 border-white/30 bg-slate-900 text-accent"
+                  />
+                  <span>{choice.title}</span>
+                </label>
+              ))}
+            </fieldset>
+
+            <div className="mt-6 flex flex-wrap justify-end gap-3">
+              <button
+                type="button"
+                onClick={handleReserveConflictCancel}
+                className="rounded-full border border-white/20 bg-white/5 px-4 py-2 text-sm font-semibold text-slate-200 transition hover:border-white/35 hover:bg-white/10"
+              >
+                Cancel import
+              </button>
+              <button
+                type="button"
+                onClick={handleReserveConflictConfirm}
+                disabled={!reserveConflictSelection}
+                className="rounded-full border border-accent/30 bg-accent/10 px-4 py-2 text-sm font-semibold text-accent transition hover:border-accent/50 hover:bg-accent/20 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                Keep selected reserve
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }

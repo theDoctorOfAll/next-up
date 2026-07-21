@@ -4,6 +4,7 @@ import {
   saveBoard
 } from "../../database/repositories/boardRepository";
 import {
+  getAllGames,
   getGameById as getGameByIdFromRepository,
   updateGame
 } from "../../database/repositories/gameRepository";
@@ -102,6 +103,20 @@ export async function setReserveGame(gameId: number, options: ReserveMoveOptions
     });
 
     await addPoints(-RESERVE_MOVE_COST, "reserve move", eventId);
+  }
+
+  // Guardrail: enforce a single reserve flag across the whole library.
+  const allGames = await getAllGames();
+  for (const game of allGames) {
+    if (!game.id || game.id === gameId || !game.reserved) {
+      continue;
+    }
+
+    await updateGame({
+      ...game,
+      reserved: false,
+      updatedAt: now()
+    });
   }
 
   await updateGame({

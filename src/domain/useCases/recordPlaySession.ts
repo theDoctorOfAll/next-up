@@ -2,7 +2,7 @@ import { now } from "../../core/clock.ts";
 import { addEvent } from "../../database/services.ts";
 import type { Game } from "../../database/db.ts";
 import type { UseCaseResult } from "../useCaseResult.ts";
-import { getGameById } from "../services/GameLibraryService.ts";
+import { getGameById, updateGameInLibrary } from "../services/GameLibraryService.ts";
 import {
   getCurrentBoard,
   lockDaily,
@@ -22,7 +22,8 @@ export interface RecordedPlayResult extends Game {
 
 export async function recordPlaySession(
   pool: PlayPool,
-  playtimeMinutes: number
+  playtimeMinutes: number,
+  markCompleted: boolean = false
 ): Promise<UseCaseResult<RecordedPlayResult>> {
   const timestamp = now();
   const board = await getCurrentBoard();
@@ -72,10 +73,15 @@ export async function recordPlaySession(
     timestamp
   });
 
+  const shouldMarkCompleted = markCompleted && !game.completed;
+  const finalGame = shouldMarkCompleted
+    ? await updateGameInLibrary(game.id, { completed: true })
+    : game;
+
   return {
     success: true,
     data: {
-      ...game,
+      ...finalGame,
       reward: rules.reward,
       playtimeMinutes: normalizedPlaytimeMinutes,
       pool

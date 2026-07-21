@@ -14,6 +14,7 @@ export interface Game {
   platforms?: string[];
   multiplayer: boolean;
   reserved: boolean;
+  completed: boolean;
   igdbId?: number;
   coverCacheKey?: string;
   createdAt: number;
@@ -27,6 +28,7 @@ export type EventType =
   | "GAME_CREATED"
   | "GAME_UPDATED"
   | "GAME_DELETED"
+  | "GAME_COMPLETED"
   | "ROLL_DAILY"
   | "ROLL_WEEKLY"
   | "PLAY_RECORDED"
@@ -143,6 +145,21 @@ class NextUpDB extends Dexie {
           if (typeof game.coverCacheKey !== "string" || game.coverCacheKey.trim().length === 0) {
             game.coverCacheKey = game.id ? `game_cover_${game.id}` : undefined;
           }
+        });
+      });
+
+    this.version(8)
+      .stores({
+        games: "++id, title, pool, reserved, completed, *platforms, igdbId, coverCacheKey",
+        events: "++id, type, timestamp",
+        points: "++id, timestamp",
+        board: "id",
+        metadata: "key"
+      })
+      .upgrade(async (tx) => {
+        await tx.table("games").toCollection().modify((game: Partial<Game>) => {
+          game.multiplayer = Boolean(game.multiplayer);
+          game.completed = Boolean(game.completed);
         });
       });
   }

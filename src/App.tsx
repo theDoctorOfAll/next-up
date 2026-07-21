@@ -7,8 +7,10 @@ import Events from "./pages/Events";
 import Stats from "./pages/Stats";
 import Settings from "./pages/Settings";
 import Debug from "./pages/Debug";
+import Onboarding from "./pages/Onboarding";
 import { useAppInitialization } from "./hooks/useAppInitialization";
 import { isDeveloperModeEnabled } from "./core/runtimePreferences";
+import { isOnboardingLockedOut } from "./database/repositories/onboardingRepository";
 
 function isMobileAspectRatio() {
   if (typeof window === "undefined") {
@@ -60,6 +62,10 @@ function getMobileHeaderIcon(icon?: MobileHeaderAction["icon"]) {
 }
 
 function getMobilePageTitle(pathname: string) {
+  if (pathname.includes("/onboarding")) {
+    return "Welcome";
+  }
+
   if (pathname === "/next-up/board" || pathname === "/board" || pathname === "/" || pathname === "/next-up") {
     return "Next Up";
   }
@@ -85,6 +91,66 @@ function getMobilePageTitle(pathname: string) {
   }
 
   return "Next Up";
+}
+
+function NextUpEntry() {
+  const [isResolved, setIsResolved] = useState(false);
+  const [shouldShowOnboarding, setShouldShowOnboarding] = useState(false);
+
+  useEffect(() => {
+    let isDisposed = false;
+
+    void (async () => {
+      const lockedOut = await isOnboardingLockedOut();
+
+      if (isDisposed) {
+        return;
+      }
+
+      setShouldShowOnboarding(!lockedOut);
+      setIsResolved(true);
+    })();
+
+    return () => {
+      isDisposed = true;
+    };
+  }, []);
+
+  if (!isResolved) {
+    return null;
+  }
+
+  return <Navigate to={shouldShowOnboarding ? "/next-up/onboarding" : "/next-up/board"} replace />;
+}
+
+function OnboardingEntry() {
+  const [isResolved, setIsResolved] = useState(false);
+  const [isLockedOut, setIsLockedOut] = useState(false);
+
+  useEffect(() => {
+    let isDisposed = false;
+
+    void (async () => {
+      const lockedOut = await isOnboardingLockedOut();
+
+      if (isDisposed) {
+        return;
+      }
+
+      setIsLockedOut(lockedOut);
+      setIsResolved(true);
+    })();
+
+    return () => {
+      isDisposed = true;
+    };
+  }, []);
+
+  if (!isResolved) {
+    return null;
+  }
+
+  return isLockedOut ? <Navigate to="/next-up/board" replace /> : <Onboarding />;
 }
 
 export default function App() {
@@ -206,7 +272,8 @@ export default function App() {
               <Route path="/stats" element={<Navigate to="/next-up/stats" replace />} />
               <Route path="/settings" element={<Navigate to="/next-up/settings" replace />} />
               <Route path="/debug" element={<Navigate to="/next-up/debug" replace />} />
-              <Route path="/next-up" element={<Navigate to="/next-up/board" replace />} />
+              <Route path="/next-up" element={<NextUpEntry />} />
+              <Route path="/next-up/onboarding" element={<OnboardingEntry />} />
               <Route path="/next-up/board" element={<Board />} />
               <Route path="/next-up/library" element={<Library />} />
               <Route path="/next-up/events" element={<Events />} />
@@ -275,8 +342,7 @@ export default function App() {
                     className="rounded-xl border border-accent/25 bg-accent/10 px-2.5 py-1.5 text-right"
                     aria-label={item.label}
                   >
-                    <p className="text-[10px] uppercase tracking-wide text-slate-300">{item.label}</p>
-                    <p className="text-sm font-semibold text-accent">{item.value}</p>
+                    <p className={item.id === "balance" ? "text-xl font-bold text-accent leading-none" : "text-sm font-semibold text-accent"}>{item.value}</p>
                   </div>
                 ))}
               </div>
@@ -331,7 +397,8 @@ export default function App() {
               <Route path="/stats" element={<Navigate to="/next-up/stats" replace />} />
               <Route path="/settings" element={<Navigate to="/next-up/settings" replace />} />
               <Route path="/debug" element={<Navigate to="/next-up/debug" replace />} />
-              <Route path="/next-up" element={<Navigate to="/next-up/board" replace />} />
+              <Route path="/next-up" element={<NextUpEntry />} />
+              <Route path="/next-up/onboarding" element={<OnboardingEntry />} />
               <Route path="/next-up/board" element={<Board />} />
               <Route path="/next-up/library" element={<Library />} />
               <Route path="/next-up/events" element={<Events />} />

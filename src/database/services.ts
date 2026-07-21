@@ -89,3 +89,17 @@ export async function clearEventHistory() {
     saveBoard(board)
   ]);
 }
+
+export async function resetLocalState() {
+  resetClockOffset();
+
+  await db.transaction("rw", db.games, db.events, db.points, db.board, db.metadata, async () => {
+    await Promise.all([
+      db.games.clear(),
+      db.events.clear(),
+      db.points.clear(),
+      db.board.clear(),
+      db.metadata.clear()
+    ]);
+  });
+}

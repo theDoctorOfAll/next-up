@@ -1,5 +1,6 @@
 import { now } from "../../core/clock";
 import { db, type ActiveGamePool, type Game, type GamePool } from "../../database/db";
+import { addPoints } from "../../database/services";
 import {
   addGame,
   deleteGame,
@@ -11,13 +12,16 @@ import {
 import { recordEvent } from "../../database/repositories/eventRepository";
 import { getBoard, saveBoard } from "../../database/repositories/boardRepository";
 import { getPointBalance, spendPoints } from "../../database/repositories/pointRepository";
+import { getCurrentGameMode } from "../../database/repositories/gameModeRepository";
 import { invalidateGameCoverCache } from "../../database/repositories/gameCoverRepository";
 import { assertValidPool } from "./validateGame";
 
 const ADD_GAME_COST = 500;
+const COMPLETION_MODE_ADD_GAME_COST = 1000;
 const CHANGE_POOL_COST = 10;
 const CHANGE_WEIGHT_COST = 15;
 const WEIGHT_ADJUSTMENT_COST = 15;
+const COMPLETION_MODE_COMPLETION_REWARD = 150;
 
 export interface NewGameInput {
   title: string;
@@ -139,7 +143,10 @@ export async function addGameInternal(
   }
 
   if (shouldCharge) {
-    await chargeLibraryCost(ADD_GAME_COST, "add game", {
+    const mode = await getCurrentGameMode();
+    const addGameCost = mode === "completion" ? COMPLETION_MODE_ADD_GAME_COST : ADD_GAME_COST;
+
+    await chargeLibraryCost(addGameCost, "add game", {
       title,
       pool: poolInput,
       reason: "add game"
@@ -153,6 +160,7 @@ export async function addGameInternal(
     platforms: parsePlatformsInput(platformsInput.join(",")),
     multiplayer: multiplayerInput,
     reserved: false,
+    completed: false,
     createdAt: now(),
     updatedAt: now()
   });
@@ -164,7 +172,7 @@ export async function addGameInternal(
 
 export async function updateGameInLibrary(
   id: number,
-  updates: { title?: string; pool?: GamePool; weight?: number; platforms?: string[]; multiplayer?: boolean }
+  updates: { title?: string; pool?: GamePool; weight?: number; platforms?: string[]; multiplayer?: boolean; completed?: boolean }
 ): Promise<Game> {
   const existing = await getGameByIdFromRepository(id);
 
@@ -182,11 +190,13 @@ export async function updateGameInLibrary(
   const nextWeight = normalizeWeight(updates.weight ?? existing.weight);
   const nextPlatforms = parsePlatformsInput((updates.platforms ?? existing.platforms ?? []).join(","));
   const nextMultiplayer = updates.multiplayer ?? existing.multiplayer;
+  const nextCompleted = updates.completed ?? existing.completed;
   const changedPool = nextPool !== existing.pool;
   const changedWeight = nextWeight !== existing.weight;
   const changedTitle = nextTitle !== existing.title;
   const changedPlatforms = JSON.stringify(nextPlatforms) !== JSON.stringify(existing.platforms ?? []);
   const changedMultiplayer = nextMultiplayer !== existing.multiplayer;
+  const changedCompleted = nextCompleted !== existing.completed;
 
   if (changedPool || changedWeight || changedTitle) {
     const totalCost = (changedPool ? CHANGE_POOL_COST : 0) + (changedWeight ? CHANGE_WEIGHT_COST : 0);
@@ -209,6 +219,7 @@ export async function updateGameInLibrary(
     weight: nextWeight,
     platforms: nextPlatforms,
     multiplayer: nextMultiplayer,
+    completed: nextCompleted,
     updatedAt: now()
   };
 
@@ -225,8 +236,30 @@ export async function updateGameInLibrary(
     weight: updatedGame.weight,
     platforms: updatedGame.platforms,
     multiplayer: updatedGame.multiplayer,
+    completed: updatedGame.completed,
     reason: "Library update"
   });
+
+  if (changedCompleted) {
+    await recordEvent("GAME_COMPLETED", {
+      id: updatedGame.id,
+      title: updatedGame.title,
+      completed: updatedGame.completed
+    });
+
+    if (updatedGame.completed) {
+      const gameMode = await getCurrentGameMode();
+
+      if (gameMode === "completion") {
+        await addPoints(COMPLETION_MODE_COMPLETION_REWARD, "completion mode completion");
+        await recordEvent("POINTS_AWARDED", {
+          gameId: updatedGame.id,
+          amount: COMPLETION_MODE_COMPLETION_REWARD,
+          reason: "completion mode completion"
+        });
+      }
+    }
+  }
 
   return updatedGame;
 }
@@ -317,8 +350,9 @@ export async function getGamesByPool(poolInput: GamePool): Promise<Game[]> {
 
 export async function getEligibleGames(poolInput: ActiveGamePool): Promise<Game[]> {
   const games = await getGamesByPool(poolInput);
+  const gameMode = await getCurrentGameMode();
 
-  return games.filter((game) => !game.reserved);
+  return games.filter((game) => !game.reserved && (gameMode !== "completion" || !game.completed));
 }
 
 export async function ensureGameIntegrity() {
@@ -336,6 +370,7 @@ export async function ensureGameIntegrity() {
         pool: game.pool === "reserve" ? "none" : "daily",
         reserved: game.pool === "reserve" ? true : Boolean(game.reserved),
         multiplayer: Boolean(game.multiplayer),
+        completed: Boolean(game.completed),
         updatedAt: now()
       };
 
@@ -357,6 +392,7 @@ export async function ensureGameIntegrity() {
       await updateGame({
         ...game,
         multiplayer: Boolean(game.multiplayer),
+        completed: Boolean(game.completed),
         updatedAt: now()
       });
     }

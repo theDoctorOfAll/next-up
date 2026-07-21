@@ -29,7 +29,7 @@ async function getDailyCooldownMultipliers(games: Game[]) {
     return new Map<number, number>();
   }
 
-  const n = Math.max(1, Math.floor(games.length / 2));
+  const n = Math.max(1, games.length);
   const allEvents = await getEvents();
   const rollEvents = allEvents
     .filter((event) => event.type === "ROLL_DAILY" && typeof event.payload?.gameId === "number")

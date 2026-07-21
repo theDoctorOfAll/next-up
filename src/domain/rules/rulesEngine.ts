@@ -1,4 +1,5 @@
 import { db, type ActiveGamePool, type BoardState, type GamePool } from "../../database/db.ts";
+import { getCurrentGameMode } from "../../database/repositories/gameModeRepository.ts";
 
 export type PlayPool = GamePool | "reserve" | "multiplayer";
 
@@ -12,6 +13,8 @@ const RESERVE_MOVE_COST = 25;
 const WEEKLY_PROGRESSION_REWARDS = [0, 5, 5, 10, 10, 15, 15];
 const PLAYTIME_REWARD_PER_15_MINUTES = 5;
 export const MULTIPLAYER_REWARD_PER_ADDITIONAL_PLAYER = 10;
+const COMPLETION_MODE_ADD_GAME_COST = 1000;
+const COMPLETION_MODE_COMPLETION_REWARD = 150;
 
 export interface RollRuleResult {
   allowed: boolean;
@@ -209,11 +212,24 @@ export async function evaluateMultiplayerPlayRules(
 }
 
 export async function getLibraryRuleCosts() {
+  const gameMode = await getCurrentGameMode();
+
   return {
-    addGame: ADD_GAME_COST,
+    addGame: gameMode === "completion" ? COMPLETION_MODE_ADD_GAME_COST : ADD_GAME_COST,
     changePool: CHANGE_POOL_COST,
     changeWeight: CHANGE_WEIGHT_COST,
     moveToReserve: RESERVE_MOVE_COST
+  };
+}
+
+export async function getCompletionModeRules() {
+  const gameMode = await getCurrentGameMode();
+
+  return {
+    gameMode,
+    addGameCost: gameMode === "completion" ? COMPLETION_MODE_ADD_GAME_COST : ADD_GAME_COST,
+    completionReward: COMPLETION_MODE_COMPLETION_REWARD,
+    dailyWeeklyRequireIncomplete: gameMode === "completion"
   };
 }
 

@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState, type FormEvent } from "react";
 import { Link } from "react-router-dom";
+import { getCurrentGameMode, type GameMode } from "../database/repositories/gameModeRepository";
 import { getAllGames } from "../database/repositories/gameRepository";
 import { getCachedGameCover, storeGameCoverCache, type GameCoverCacheValue } from "../database/repositories/gameCoverRepository";
 import { addGameToLibrary, adjustGameWeightInLibrary, parsePlatformsInput, deleteGameFromLibrary, getWeightValueFromSteps, updateGameInLibrary } from "../domain/services/GameLibraryService";
@@ -46,6 +47,7 @@ export default function Library() {
   const [editPool, setEditPool] = useState<GamePool>("daily");
   const [editPlatforms, setEditPlatforms] = useState("");
   const [editMultiplayer, setEditMultiplayer] = useState(false);
+  const [editCompleted, setEditCompleted] = useState(false);
   const [isSavingEdit, setIsSavingEdit] = useState(false);
   const [isSavingAdd, setIsSavingAdd] = useState(false);
   const [coverDialogMode, setCoverDialogMode] = useState<"edit" | "add" | null>(null);
@@ -65,6 +67,8 @@ export default function Library() {
     changeWeight: 15,
     moveToReserve: 25
   });
+  const [gameMode, setGameMode] = useState<GameMode>("standard");
+  const canEditCompletionInLibrary = gameMode !== "completion";
 
   async function refreshLibrary() {
     const allGames = await getAllGames();
@@ -139,6 +143,7 @@ export default function Library() {
     setEditPool(game.pool);
     setEditPlatforms((game.platforms ?? []).join(", "));
     setEditMultiplayer(game.multiplayer);
+    setEditCompleted(Boolean(game.completed));
     setCoverSearchQuery(game.title);
     setCoverDialogMode(null);
     resetCoverPickerState();
@@ -215,7 +220,8 @@ export default function Library() {
         title: editTitle,
         pool: editPool,
         platforms: normalizedEditPlatforms,
-        multiplayer: editMultiplayer
+        multiplayer: editMultiplayer,
+        ...(canEditCompletionInLibrary ? { completed: editCompleted } : {})
       });
 
       await refreshLibrary();
@@ -351,6 +357,7 @@ export default function Library() {
   useEffect(() => {
     void refreshLibrary();
     void getLibraryRuleCosts().then(setCosts);
+    void getCurrentGameMode().then(setGameMode);
   }, []);
 
   useEffect(() => {
@@ -452,9 +459,10 @@ export default function Library() {
       normalizedTitle !== editingGame.title ||
       editPool !== editingGame.pool ||
       JSON.stringify(normalizedEditPlatforms) !== JSON.stringify(normalizedCurrentPlatforms) ||
-      editMultiplayer !== editingGame.multiplayer
+      editMultiplayer !== editingGame.multiplayer ||
+      (canEditCompletionInLibrary && editCompleted !== editingGame.completed)
     );
-  }, [editMultiplayer, editPool, editTitle, editingGame, normalizedEditPlatforms]);
+  }, [canEditCompletionInLibrary, editCompleted, editMultiplayer, editPool, editTitle, editingGame, normalizedEditPlatforms]);
 
   const hasPoolChanged = Boolean(editingGame && editPool !== editingGame.pool);
 
@@ -540,6 +548,10 @@ export default function Library() {
                 <p className="font-medium text-white">{game.multiplayer ? "Yes" : "No"}</p>
               </div>
               <div>
+                <p className="text-slate-500">Completed</p>
+                <p className="font-medium text-white">{game.completed ? "Yes" : "No"}</p>
+              </div>
+              <div>
                 <p className="text-slate-500">Reserved</p>
                 <p className="font-medium text-white">{game.reserved ? "Yes" : "No"}</p>
               </div>
@@ -560,6 +572,9 @@ export default function Library() {
         <div>
           <h1 className="text-2xl font-bold text-accent">Library</h1>
           <p className="mt-1 hidden text-sm opacity-80 lg:block">Browse games in each RNG pool, or keep titles outside the active pools.</p>
+          {gameMode === "completion" ? (
+            <p className="mt-2 hidden text-sm text-slate-300 lg:block">Completion mode is active: only incomplete daily and weekly games can roll, and marking a game complete awards ♦150.</p>
+          ) : null}
         </div>
 
         <div className="flex items-center gap-3">
@@ -711,6 +726,21 @@ export default function Library() {
                 />
                 <span>Multiplayer game</span>
               </label>
+              {canEditCompletionInLibrary ? (
+                <label className="flex items-center gap-3 rounded-2xl border border-accent/20 bg-accent/5 px-4 py-3 text-sm text-white">
+                  <input
+                    type="checkbox"
+                    checked={editCompleted}
+                    onChange={(event) => setEditCompleted(event.target.checked)}
+                    className="h-4 w-4 accent-accent"
+                  />
+                  <span>Mark game complete</span>
+                </label>
+              ) : (
+                <p className="rounded-2xl border border-accent/20 bg-accent/5 px-4 py-3 text-sm text-slate-300">
+                  Completion mode is active. Mark completion from the Record Play dialog on the Board.
+                </p>
+              )}
 
               <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
                 <div className="flex flex-wrap items-center justify-between gap-3">
