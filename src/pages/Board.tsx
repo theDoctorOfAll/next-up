@@ -8,9 +8,10 @@ import { recordPlaySession } from "../domain/useCases/recordPlaySession";
 import { recordMultiplayerSession } from "../domain/useCases/recordMultiplayerSession";
 import { getBoardView, type BoardView } from "../domain/queries/getBoardView";
 import { clearReserveGame, getCurrentBoard, setReserveGame } from "../domain/services/BoardService";
-import { evaluatePlayRules, getMultiplayerReward } from "../domain/rules/rulesEngine";
+import { evaluatePlayRules, getCompletionModeRules, getMultiplayerReward } from "../domain/rules/rulesEngine";
 import { getPointBalance } from "../database/repositories/pointRepository";
 import { getAllGames } from "../database/repositories/gameRepository";
+import { getEvents } from "../database/repositories/eventRepository";
 import { getCurrentGameMode, type GameMode } from "../database/repositories/gameModeRepository";
 import { getCachedGameCover, type GameCoverCacheValue } from "../database/repositories/gameCoverRepository";
 import type { Game } from "../database/db";
@@ -25,7 +26,7 @@ const DAILY_REROLL_COST = 5;
 const WEEKLY_REROLL_COST = 10;
 const RESERVE_MOVE_COST = 25;
 const MAX_MULTIPLAYER_PLAYERS = 10;
-const COMPLETION_MODE_COMPLETION_REWARD = 150;
+const MAX_DAILY_PLAYTIME_MINUTES_PER_TITLE = 12 * 60;
 
 type PlaySessionPool = "daily" | "weekly" | "reserve";
 
@@ -142,7 +143,10 @@ export default function Board() {
   const [isPlayDialogOpen, setIsPlayDialogOpen] = useState(false);
   const [isReserveDialogOpen, setIsReserveDialogOpen] = useState(false);
   const [projectedSessionReward, setProjectedSessionReward] = useState<number | null>(null);
+  const [completionReward, setCompletionReward] = useState(0);
   const [markPlayedGameCompleted, setMarkPlayedGameCompleted] = useState(false);
+  const [isSessionTimingPlausible, setIsSessionTimingPlausible] = useState(true);
+  const [isWithinDailyTitlePlaytimeCap, setIsWithinDailyTitlePlaytimeCap] = useState(true);
 
   const sessionOptions = useMemo(() => getSessionOptions(view), [view]);
   const selectedSessionOption = sessionOptions.find((option) => option.pool === playSessionPool);
@@ -170,12 +174,13 @@ export default function Board() {
     : undefined;
   const isCompletionMode = gameMode === "completion";
   const canMarkSelectedGameCompleted = Boolean(selectedSessionGame && !selectedSessionGame.completed);
-  const projectedCompletionBonus = isCompletionMode && markPlayedGameCompleted && canMarkSelectedGameCompleted
-    ? COMPLETION_MODE_COMPLETION_REWARD
+  const completionPreviewBonus = isCompletionMode && markPlayedGameCompleted && canMarkSelectedGameCompleted
+    ? completionReward
     : 0;
-  const projectedTotalReward = (projectedSessionReward ?? 0) + projectedCompletionBonus;
   const playtimeBonus = getPlaytimeBonus(playtimeMinutes);
-  const projectedPoolBonus = projectedSessionReward === null ? null : Math.max(0, projectedSessionReward - playtimeBonus);
+  const projectedPoolBonus = projectedSessionReward === null
+    ? null
+    : Math.max(0, projectedSessionReward - playtimeBonus - completionPreviewBonus);
   const multiplayerReward = getMultiplayerReward(playerCount);
   const dailyRerollCost = view?.dailyIsReroll ? DAILY_REROLL_COST : 0;
   const weeklyRerollCost = view?.weeklyIsReroll ? WEEKLY_REROLL_COST : 0;
@@ -310,18 +315,168 @@ export default function Board() {
     void (async () => {
       const board = await getCurrentBoard();
       const rules = await evaluatePlayRules(board, playSessionPool, now(), normalizedMinutes);
+      const completionRules = await getCompletionModeRules();
 
       if (isCancelled) {
         return;
       }
 
-      setProjectedSessionReward(rules.allowed ? rules.reward : 0);
+      const shouldIncludeCompletionBonus =
+        completionRules.gameMode === "completion"
+        && markPlayedGameCompleted
+        && Boolean(selectedSessionGame)
+        && !selectedSessionGame.completed;
+
+      setCompletionReward(completionRules.completionReward);
+
+      setProjectedSessionReward(
+        rules.allowed
+          ? rules.reward + (shouldIncludeCompletionBonus ? completionRules.completionReward : 0)
+          : 0
+      );
     })();
 
     return () => {
       isCancelled = true;
     };
-  }, [isMultiplayerLogging, isPlayDialogOpen, playSessionPool, playtimeMinutes]);
+  }, [
+    isMultiplayerLogging,
+    isPlayDialogOpen,
+    markPlayedGameCompleted,
+    playSessionPool,
+    playtimeMinutes,
+    selectedSessionGame
+  ]);
+
+  useEffect(() => {
+    if (!isPlayDialogOpen || isMultiplayerLogging) {
+      setIsSessionTimingPlausible(true);
+      return;
+    }
+
+    if (!playSessionPool || !selectedSessionGameId) {
+      setIsSessionTimingPlausible(true);
+      return;
+    }
+
+    const normalizedMinutes = normalizePlaytimeMinutes(playtimeMinutes);
+
+    if (normalizedMinutes <= 0) {
+      setIsSessionTimingPlausible(true);
+      return;
+    }
+
+    let isCancelled = false;
+
+    void (async () => {
+      const [board, allEvents] = await Promise.all([
+        getCurrentBoard(),
+        getEvents()
+      ]);
+
+      if (isCancelled) {
+        return;
+      }
+
+      const orderedEvents = [...allEvents].sort((left, right) => left.timestamp - right.timestamp);
+      const timestamp = now();
+
+      const startedAtFromBoard =
+        playSessionPool === "daily"
+          ? board.dailyRolledAt
+          : playSessionPool === "weekly"
+            ? board.weeklyRolledAt
+            : undefined;
+
+      const startedAtFromReserveEvent = playSessionPool === "reserve"
+        ? orderedEvents
+          .filter((event) =>
+            event.type === "RESERVE_SET"
+            && event.payload?.reserved === true
+            && event.payload?.gameId === selectedSessionGameId
+          )
+          .at(-1)?.timestamp
+        : undefined;
+
+      const startedAt = Math.min(
+        timestamp,
+        Math.max(
+          0,
+          startedAtFromBoard
+            ?? startedAtFromReserveEvent
+            ?? selectedSessionGame?.createdAt
+            ?? timestamp
+        )
+      );
+
+      const elapsedMinutes = Math.max(0, Math.floor((timestamp - startedAt) / (60 * 1000)));
+      const alreadyRecordedMinutes = orderedEvents
+        .filter((event) =>
+          event.type === "PLAY_RECORDED"
+          && event.timestamp >= startedAt
+          && event.payload?.pool === playSessionPool
+          && event.payload?.gameId === selectedSessionGameId
+        )
+        .reduce((total, event) => {
+          const value = Number(event.payload?.playtimeMinutes);
+          return total + (Number.isFinite(value) ? Math.max(0, Math.floor(value)) : 0);
+        }, 0);
+
+      const nextRecordedTotal = alreadyRecordedMinutes + normalizedMinutes;
+      setIsSessionTimingPlausible(nextRecordedTotal <= elapsedMinutes);
+    })();
+
+    return () => {
+      isCancelled = true;
+    };
+  }, [isMultiplayerLogging, isPlayDialogOpen, playSessionPool, playtimeMinutes, selectedSessionGame?.createdAt, selectedSessionGameId]);
+
+  useEffect(() => {
+    if (!isPlayDialogOpen || isMultiplayerLogging || !selectedSessionGameId) {
+      setIsWithinDailyTitlePlaytimeCap(true);
+      return;
+    }
+
+    const normalizedMinutes = normalizePlaytimeMinutes(playtimeMinutes);
+
+    if (normalizedMinutes <= 0) {
+      setIsWithinDailyTitlePlaytimeCap(true);
+      return;
+    }
+
+    let isCancelled = false;
+
+    void (async () => {
+      const timestamp = now();
+      const dayStart = new Date(timestamp).setHours(0, 0, 0, 0);
+      const dayEnd = dayStart + (24 * 60 * 60 * 1000);
+      const allEvents = await getEvents();
+
+      if (isCancelled) {
+        return;
+      }
+
+      const alreadyRecordedToday = allEvents
+        .filter((event) =>
+          event.type === "PLAY_RECORDED"
+          && event.payload?.gameId === selectedSessionGameId
+          && event.timestamp >= dayStart
+          && event.timestamp < dayEnd
+        )
+        .reduce((total, event) => {
+          const value = Number(event.payload?.playtimeMinutes);
+          return total + (Number.isFinite(value) ? Math.max(0, Math.floor(value)) : 0);
+        }, 0);
+
+      setIsWithinDailyTitlePlaytimeCap(
+        alreadyRecordedToday + normalizedMinutes <= MAX_DAILY_PLAYTIME_MINUTES_PER_TITLE
+      );
+    })();
+
+    return () => {
+      isCancelled = true;
+    };
+  }, [isMultiplayerLogging, isPlayDialogOpen, playtimeMinutes, selectedSessionGameId]);
 
   async function handleDailyRoll() {
     setMessage(null);
@@ -437,11 +592,7 @@ export default function Board() {
       const completionSuffix = isCompletionMode && markPlayedGameCompleted
         ? " Marked as completed."
         : "";
-      const completionReward = isCompletionMode && markPlayedGameCompleted && canMarkSelectedGameCompleted
-        ? COMPLETION_MODE_COMPLETION_REWARD
-        : 0;
-      const totalReward = result.data.reward + completionReward;
-      setMessage(`Recorded ${result.data.playtimeMinutes} minutes for ${result.data.title}: +♦${totalReward}.${completionSuffix}`);
+      setMessage(`Recorded ${result.data.playtimeMinutes} minutes for ${result.data.title}: +♦${result.data.reward}.${completionSuffix}`);
       setIsPlayDialogOpen(false);
       setMarkPlayedGameCompleted(false);
     } catch (error) {
@@ -721,6 +872,14 @@ export default function Board() {
                     onChange={(event) => setPlaytimeMinutes(normalizePlaytimeMinutes(Number(event.target.value)))}
                     className="w-full accent-accent"
                   />
+                  <p className="text-xs text-slate-500">Playtime bonus from this session: +♦{playtimeBonus}.</p>
+                  {playSessionPool === "daily" || playSessionPool === "weekly" ? (
+                    <p className="text-xs text-slate-500">{playSessionPool === "daily" ? "Daily" : "Weekly"} bonus from this session: +♦{projectedPoolBonus ?? 0}.</p>
+                  ) : null}
+                  {isCompletionMode && completionPreviewBonus > 0 ? (
+                    <p className="text-xs text-slate-500">Completion bonus from this session: +♦{completionPreviewBonus}.</p>
+                  ) : null}
+                  <p className="text-xs text-slate-400">Total reward from this session: +♦{projectedSessionReward ?? 0}.</p>
 
                   {isCompletionMode ? (
                     <label className="flex items-center gap-3 rounded-2xl border border-accent/20 bg-accent/5 px-4 py-3 text-sm text-white">
@@ -738,17 +897,6 @@ export default function Board() {
                       </span>
                     </label>
                   ) : null}
-
-                  <div className="space-y-1">
-                    <p className="text-xs text-slate-500">Playtime bonus from this session: +♦{playtimeBonus}.</p>
-                    {playSessionPool === "daily" || playSessionPool === "weekly" ? (
-                      <p className="text-xs text-slate-500">{playSessionPool === "daily" ? "Daily" : "Weekly"} bonus from this session: +♦{projectedPoolBonus ?? 0}.</p>
-                    ) : null}
-                    {projectedCompletionBonus === 150 ? (
-                      <p className="text-xs text-slate-500">Completion bonus: +♦150.</p>
-                    ) : null}
-                    <p className="text-xs text-slate-400">Total reward from this session: +♦{projectedTotalReward}.</p>
-                  </div>
                 </div>
               ) : (
                 <div className="space-y-3">
@@ -784,7 +932,7 @@ export default function Board() {
               <button
                 type="button"
                 onClick={handleRecordSession}
-                disabled={isRecordingSession || (isMultiplayerLogging ? !selectedMultiplayerGame || playerCount <= 1 : playtimeMinutes <= 0 || !selectedSessionOption)}
+                disabled={isRecordingSession || (isMultiplayerLogging ? !selectedMultiplayerGame || playerCount <= 1 : playtimeMinutes <= 0 || !selectedSessionOption || !isSessionTimingPlausible || !isWithinDailyTitlePlaytimeCap)}
                 className="rounded-full bg-accent px-5 py-3 text-sm font-semibold text-black transition disabled:cursor-not-allowed disabled:opacity-60"
               >
                 {isRecordingSession ? "Recording..." : "Record session"}
