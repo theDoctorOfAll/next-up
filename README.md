@@ -11,6 +11,7 @@ Next Up is a local-first Progressive Web App for managing a personal game librar
 - enforces reroll costs and period-based lock logic
 - supports a reserve slot with a 25-point move cost
 - keeps reserved games out of the active pools and shows them in a dedicated library section
+- renders daily, weekly, and reserve games as cover-first cards on the board
 - supports per-game platform tagging for later filtering and discovery
 - supports a per-game multiplayer flag in library metadata
 - includes settings tools for reset, developer point grants, and library CSV import/export
@@ -27,8 +28,10 @@ Implemented features include:
 - unified play-session recording for daily, weekly, and reserve slots
 - reroll cost enforcement and point spending
 - reserve-slot UI and board-state updates
+- cover-first board cards for daily, weekly, and reserve games
 - pool-based library browsing with expandable details
 - reserved-game grouping in the library
+- game-cover lookups and caching through IGDB
 - weight adjustments with step-based values and costed actions
 - platform tagging and multiplayer metadata on games and library editing
 - playtime-aware scoring with 15-minute reward units

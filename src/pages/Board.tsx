@@ -9,6 +9,7 @@ import { clearReserveGame, getCurrentBoard, setReserveGame } from "../domain/ser
 import { evaluatePlayRules, getMultiplayerReward } from "../domain/rules/rulesEngine";
 import { getPointBalance } from "../database/repositories/pointRepository";
 import { getAllGames } from "../database/repositories/gameRepository";
+import { getCachedGameCover, type GameCoverCacheValue } from "../database/repositories/gameCoverRepository";
 import type { Game } from "../database/db";
 import TransientToast from "../components/TransientToast";
 import { now } from "../core/clock";
@@ -46,6 +47,53 @@ function hasSelectedGame(title: string | undefined) {
   return Boolean(title && title !== EMPTY_SLOT);
 }
 
+interface BoardSlotCardProps {
+  slotLabel: string;
+  cover: GameCoverCacheValue | null;
+  badge?: string;
+  footer?: React.ReactNode;
+  actions: React.ReactNode;
+}
+
+function BoardSlotCard({ slotLabel, cover, badge, footer, actions }: BoardSlotCardProps) {
+  return (
+    <section className="flex h-full flex-col rounded-[32px] border border-white/20 bg-slate-900/85 p-4 shadow-[0_35px_100px_-45px_rgba(0,0,0,0.9)]">
+      <div className="flex items-center justify-between gap-3">
+        <span className="text-xs uppercase tracking-wide text-slate-400">{slotLabel}</span>
+        {badge ? (
+          <span className="shrink-0 rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-slate-300">
+            {badge}
+          </span>
+        ) : null}
+      </div>
+
+      <div className="mt-3 aspect-[33/47] overflow-hidden rounded-[24px] bg-slate-950/40">
+        <div className="flex h-full w-full items-center justify-center bg-gradient-to-br from-slate-800 via-slate-900 to-black">
+          {cover?.imageUrl ? (
+            <img
+              src={cover.imageUrl}
+              alt={cover.searchQuery}
+              className="h-full w-full object-cover"
+              loading="eager"
+              decoding="async"
+            />
+          ) : (
+            <div className="flex h-full w-full flex-col items-center justify-center px-6 text-center text-sm text-slate-400">
+              <span className="text-base font-semibold text-slate-200">No cover available</span>
+              <span className="mt-2">Use Library to match a cover or add a game with IGDB search.</span>
+            </div>
+          )}
+        </div>
+      </div>
+
+      <div className="mt-3 flex flex-1 flex-col space-y-2">
+        {footer ? footer : null}
+        {actions}
+      </div>
+    </section>
+  );
+}
+
 function getSessionOptions(view: BoardView | null): PlaySessionOption[] {
   if (!view) {
     return [];
@@ -71,6 +119,7 @@ function getSessionOptions(view: BoardView | null): PlaySessionOption[] {
 export default function Board() {
   const [view, setView] = useState<BoardView | null>(null);
   const [balance, setBalance] = useState(0);
+  const [slotCovers, setSlotCovers] = useState<Partial<Record<PlaySessionPool, GameCoverCacheValue | null>>>({});
   const [playSessionPool, setPlaySessionPool] = useState<PlaySessionPool | "">("");
   const [playtimeMinutes, setPlaytimeMinutes] = useState(0);
   const [isMultiplayerLogging, setIsMultiplayerLogging] = useState(false);
@@ -84,6 +133,7 @@ export default function Board() {
   const [isRollingWeekly, setIsRollingWeekly] = useState(false);
   const [isUpdatingReserve, setIsUpdatingReserve] = useState(false);
   const [isPlayDialogOpen, setIsPlayDialogOpen] = useState(false);
+  const [isReserveDialogOpen, setIsReserveDialogOpen] = useState(false);
   const [projectedSessionReward, setProjectedSessionReward] = useState<number | null>(null);
 
   const sessionOptions = useMemo(() => getSessionOptions(view), [view]);
@@ -108,9 +158,20 @@ export default function Board() {
       getAllGames()
     ]);
 
+    const [dailyCover, weeklyCover, reserveCover] = await Promise.all([
+      nextView.dailyGameId ? getCachedGameCover(nextView.dailyGameId) : Promise.resolve({ cover: null, stale: false }),
+      nextView.weeklyGameId ? getCachedGameCover(nextView.weeklyGameId) : Promise.resolve({ cover: null, stale: false }),
+      nextView.reserveGameId ? getCachedGameCover(nextView.reserveGameId) : Promise.resolve({ cover: null, stale: false })
+    ]);
+
     setView(nextView);
     setBalance(nextBalance);
     setLibraryGames(nextGames);
+    setSlotCovers({
+      daily: dailyCover.cover,
+      weekly: weeklyCover.cover,
+      reserve: reserveCover.cover
+    });
     setReserveSelection(
       nextView.reserveTitle === EMPTY_SLOT
         ? ""
@@ -325,6 +386,7 @@ export default function Board() {
       await refreshBoard();
       const selectedGame = libraryGames.find((game) => game.id === selectedGameId);
       setMessage(`${selectedGame?.title ?? "Selected game"} is now your reserve slot.`);
+      setIsReserveDialogOpen(false);
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Could not update the reserve slot.");
     } finally {
@@ -340,12 +402,77 @@ export default function Board() {
       await clearReserveGame();
       await refreshBoard();
       setMessage("Reserve slot cleared.");
+      setIsReserveDialogOpen(false);
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Could not clear the reserve slot.");
     } finally {
       setIsUpdatingReserve(false);
     }
   }
+
+  const dailySlot = {
+    slotLabel: "Daily Game",
+    cover: slotCovers.daily ?? null,
+    footer: (
+      <p className={`text-xs ${dailyRerollCost > balance ? "text-red-300" : "text-slate-500"}`}>
+        {view?.dailyIsReroll
+          ? `${dailyRerollCost > balance ? "Insufficient balance for reroll." : "Reroll uses ♦ from your balance."}`
+          : "First daily roll each day is free."}
+      </p>
+    ),
+    actions: (
+      <div className="flex flex-wrap justify-center gap-3">
+        <button
+          onClick={handleDailyRoll}
+          disabled={isRollingDaily || view?.dailyPlayed}
+          className="rounded-full bg-accent px-5 py-3 text-sm font-semibold text-black transition disabled:cursor-not-allowed disabled:bg-white/10 disabled:text-slate-400"
+        >
+          {isRollingDaily ? "Rolling..." : view?.dailyIsReroll ? `Reroll (♦${DAILY_REROLL_COST})` : "Roll"}
+        </button>
+      </div>
+    )
+  };
+
+  const weeklySlot = {
+    slotLabel: "Weekly Game",
+    cover: slotCovers.weekly ?? null,
+    footer: (
+      <p className={`text-xs ${weeklyRerollCost > balance ? "text-red-300" : "text-slate-500"}`}>
+        {view?.weeklyIsReroll
+          ? `${weeklyRerollCost > balance ? "Insufficient balance for reroll." : "Reroll uses ♦ from your balance."}`
+          : "First weekly roll each week is free."}
+      </p>
+    ),
+    actions: (
+      <div className="flex flex-wrap justify-center gap-3">
+        <button
+          onClick={handleWeeklyRoll}
+          disabled={isRollingWeekly || view?.weeklyPlayed}
+          className="rounded-full bg-accent px-5 py-3 text-sm font-semibold text-black transition disabled:cursor-not-allowed disabled:bg-white/10 disabled:text-slate-400"
+        >
+          {isRollingWeekly ? "Rolling..." : view?.weeklyIsReroll ? `Reroll (♦${WEEKLY_REROLL_COST})` : "Roll"}
+        </button>
+      </div>
+    )
+  };
+
+  const reserveSlot = {
+    slotLabel: "Reserve Slot",
+    cover: slotCovers.reserve ?? null,
+    badge: hasSelectedGame(view?.reserveTitle) ? "Active" : undefined,
+    
+    actions: (
+      <div className="flex flex-wrap gap-3">
+        <button
+          type="button"
+          onClick={() => setIsReserveDialogOpen(true)}
+          className="rounded-full bg-accent px-5 py-3 text-sm font-semibold text-black transition disabled:cursor-not-allowed disabled:opacity-60"
+        >
+          Change reserve
+        </button>
+      </div>
+    )
+  };
 
   return (
     <div className="mx-auto max-w-5xl space-y-6 px-4 py-8 text-white sm:px-6 lg:px-8">
@@ -380,114 +507,11 @@ export default function Board() {
         </div>
       </div>
 
-      <div 
-        className="grid gap-5 md:grid-cols-2"
-        style={{ gridTemplateColumns: "repeat(2, minmax(0, 1fr))" }}
-      >
-        <div className="rounded-[32px] border border-white/20 bg-slate-900/85 p-6 shadow-[0_35px_100px_-45px_rgba(0,0,0,0.9)]">
-          <h2 className="text-xl font-semibold">Daily Game</h2>
-          <p className="mt-4 text-2xl font-semibold text-white">{view?.dailyTitle ?? EMPTY_SLOT}</p>
-          <p className="mt-3 max-w-sm text-sm text-slate-400">
-            {view?.dailyPlayed
-              ? "Already marked played"
-              : hasSelectedGame(view?.dailyTitle)
-                ? "Play today to earn ♦ and keep progress moving."
-                : "Roll to choose today\'s game."}
-          </p>
-          <div className="mt-6 space-y-3">
-            <div className="flex flex-wrap gap-3">
-              <button
-                onClick={handleDailyRoll}
-                disabled={isRollingDaily || view?.dailyPlayed}
-                className="rounded-full bg-accent px-5 py-3 text-sm font-semibold text-black transition disabled:cursor-not-allowed disabled:bg-white/10 disabled:text-slate-400"
-              >
-                {isRollingDaily ? "Rolling..." : view?.dailyIsReroll ? `Reroll (♦${DAILY_REROLL_COST})` : "Roll"}
-              </button>
-            </div>
-            <p className={`text-xs ${dailyRerollCost > balance ? "text-red-300" : "text-slate-500"}`}>
-              {view?.dailyIsReroll
-                ? `${dailyRerollCost > balance ? "Insufficient balance for reroll." : "Reroll uses ♦ from your balance."}`
-                : "First daily roll each day is free."}
-            </p>
-          </div>
-        </div>
-
-        <div className="rounded-[32px] border border-white/20 bg-slate-900/85 p-6 shadow-[0_35px_100px_-45px_rgba(0,0,0,0.9)]">
-          <h2 className="text-xl font-semibold">Weekly Game</h2>
-          <p className="mt-4 text-2xl font-semibold text-white">{view?.weeklyTitle ?? EMPTY_SLOT}</p>
-          <p className="mt-3 max-w-sm text-sm text-slate-400">
-            {view?.weeklyPlayed
-              ? "Already marked played"
-              : hasSelectedGame(view?.weeklyTitle)
-                ? "Play this week to earn ♦ rewards."
-                : "Roll to choose this week\'s game."}
-          </p>
-          <div className="mt-6 space-y-3">
-            <div className="flex flex-wrap gap-3">
-              <button
-                onClick={handleWeeklyRoll}
-                disabled={isRollingWeekly || view?.weeklyPlayed}
-                className="rounded-full bg-accent px-5 py-3 text-sm font-semibold text-black transition disabled:cursor-not-allowed disabled:bg-white/10 disabled:text-slate-400"
-              >
-                {isRollingWeekly ? "Rolling..." : view?.weeklyIsReroll ? `Reroll (♦${WEEKLY_REROLL_COST})` : "Roll"}
-              </button>
-            </div>
-            <p className={`text-xs ${weeklyRerollCost > balance ? "text-red-300" : "text-slate-500"}`}>
-              {view?.weeklyIsReroll
-                ? `${weeklyRerollCost > balance ? "Insufficient balance for reroll." : "Reroll uses ♦ from your balance."}`
-                : "First weekly roll each week is free."}
-            </p>
-          </div>
-        </div>
-      </div>
-
-      <div className="rounded-[32px] border border-white/20 bg-slate-900/85 p-6 shadow-[0_35px_100px_-45px_rgba(0,0,0,0.9)]">
-        <div className="flex flex-wrap items-center justify-between gap-4">
-          <div>
-            <h2 className="text-xl font-semibold">Reserve slot</h2>
-            <p className="mt-2 max-w-xl text-sm text-slate-400">
-              Keep a backup game on hand. Reserved titles stay out of daily and weekly rolls until you clear the slot.
-            </p>
-          </div>
-        </div>
-
-        <div className="mt-5 rounded-3xl border border-accent/20 bg-white/5 p-4">
-          <p className="text-sm uppercase tracking-wide text-slate-400">Current reserve</p>
-          <p className="mt-2 text-2xl font-semibold text-white">{view?.reserveTitle ?? EMPTY_SLOT}</p>
-        </div>
-
-        <div className="mt-5 flex flex-col gap-3 sm:flex-row sm:items-center">
-          <select
-            value={reserveSelection}
-            onChange={(event) => setReserveSelection(event.target.value)}
-            className="flex-1 rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-white outline-none transition focus:border-accent focus:bg-white/10"
-          >
-            <option value="">Choose a game</option>
-            {libraryGames.map((game) => (
-              <option key={game.id ?? game.title} value={game.id ?? ""}>
-                {game.title} ({game.pool})
-              </option>
-            ))}
-          </select>
-
-          <div className="flex flex-wrap gap-3">
-            <button
-              type="button"
-              onClick={handleSetReserve}
-              disabled={isUpdatingReserve || !reserveSelection}
-              className="rounded-full bg-accent px-5 py-3 text-sm font-semibold text-black transition disabled:cursor-not-allowed disabled:opacity-60"
-            >
-              {isUpdatingReserve ? "Saving..." : `Set reserve (♦${RESERVE_MOVE_COST})`}
-            </button>
-            <button
-              type="button"
-              onClick={handleClearReserve}
-              disabled={isUpdatingReserve || !hasSelectedGame(view?.reserveTitle)}
-              className="rounded-full bg-white/10 px-5 py-3 text-sm font-semibold text-white transition disabled:cursor-not-allowed disabled:bg-white/5 disabled:text-slate-500"
-            >
-              Clear
-            </button>
-          </div>
+      <div className="grid grid-cols-2 gap-4 lg:grid-cols-3 lg:gap-5">
+        <BoardSlotCard {...dailySlot} />
+        <BoardSlotCard {...weeklySlot} />
+        <div className="col-span-2 lg:col-span-1">
+          <BoardSlotCard {...reserveSlot} />
         </div>
       </div>
 
@@ -633,6 +657,81 @@ export default function Board() {
                 className="rounded-full bg-accent px-5 py-3 text-sm font-semibold text-black transition disabled:cursor-not-allowed disabled:opacity-60"
               >
                 {isRecordingSession ? "Recording..." : "Record session"}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {isReserveDialogOpen ? (
+        <div className="fixed inset-0 z-[9999] flex items-start justify-center overflow-y-auto bg-slate-950/80 px-4 py-6 backdrop-blur-sm sm:items-center">
+          <div className="my-auto w-full max-w-lg rounded-[32px] border border-white/10 bg-slate-950/95 p-6 shadow-[0_40px_120px_-60px_rgba(0,0,0,0.7)] z-[10000]">
+            <div className="flex items-center justify-between gap-4">
+              <div>
+                <h2 className="text-xl font-semibold">Change reserve slot</h2>
+                <p className="mt-2 text-sm text-slate-400">
+                  Pick a backup game, then set or clear the reserve from this dialog.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsReserveDialogOpen(false)}
+                className="rounded-full border border-white/10 bg-white/5 px-3 py-2 text-sm font-semibold text-white transition hover:border-accent/40 hover:bg-white/10"
+              >
+                Close
+              </button>
+            </div>
+
+            <div className="mt-6 space-y-5">
+              <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
+                <p className="text-sm uppercase tracking-wide text-slate-400">Current reserve</p>
+                <p className="mt-2 text-2xl font-semibold text-white">{view?.reserveTitle ?? EMPTY_SLOT}</p>
+              </div>
+
+              <label className="block space-y-2 text-sm text-slate-400">
+                <span className="text-xs uppercase tracking-wide">Reserve title</span>
+                <select
+                  value={reserveSelection}
+                  onChange={(event) => setReserveSelection(event.target.value)}
+                  className="w-full rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-white outline-none transition focus:border-accent focus:bg-white/10"
+                >
+                  <option value="">Choose a game</option>
+                  {libraryGames.map((game) => (
+                    <option key={game.id ?? game.title} value={game.id ?? ""}>
+                      {game.title} ({game.pool})
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              <p className={`text-xs ${RESERVE_MOVE_COST > balance ? "text-red-300" : "text-slate-500"}`}>
+                Reserve changes cost ♦{RESERVE_MOVE_COST}. Clearing the slot is free.
+              </p>
+            </div>
+
+            <div className="mt-6 flex flex-wrap justify-center gap-3">
+              <button
+                type="button"
+                onClick={() => setIsReserveDialogOpen(false)}
+                className="rounded-full bg-white/10 px-5 py-3 text-sm font-semibold text-white transition hover:bg-white/15"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleSetReserve}
+                disabled={isUpdatingReserve || !reserveSelection}
+                className="rounded-full bg-accent px-5 py-3 text-sm font-semibold text-black transition disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {isUpdatingReserve ? "Saving..." : `Set reserve (♦${RESERVE_MOVE_COST})`}
+              </button>
+              <button
+                type="button"
+                onClick={handleClearReserve}
+                disabled={isUpdatingReserve || !hasSelectedGame(view?.reserveTitle)}
+                className="rounded-full bg-white/10 px-5 py-3 text-sm font-semibold text-white transition disabled:cursor-not-allowed disabled:bg-white/5 disabled:text-slate-500"
+              >
+                Clear
               </button>
             </div>
           </div>

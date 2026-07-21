@@ -3,6 +3,11 @@ import { getGameById } from "../../database/repositories/gameRepository";
 import { now } from "../../core/clock";
 
 export interface BoardView {
+    dailyGameId?: number;
+
+    weeklyGameId?: number;
+
+    reserveGameId?: number;
 
     dailyTitle: string;
 
@@ -89,6 +94,12 @@ export async function getBoardView(): Promise<BoardView> {
     );
 
     return {
+
+        dailyGameId: daily?.id,
+
+        weeklyGameId: weekly?.id,
+
+        reserveGameId: reserve?.id,
 
         dailyTitle: daily?.title ?? "—",
 

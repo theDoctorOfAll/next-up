@@ -80,21 +80,27 @@ Delivered:
 - reroll cost feedback on board cards
 - reroll behavior that avoids reselecting the same title when alternatives exist
 
-## Post-release operating model
+This is the current status of development.
 
-### Feedback-first development
+### Phase 9 - Ease of Use (Incomplete)
 
-Future work is selected from observed usage and user-reported needs.
-
-Priority order:
-
-1. correctness and data safety
-2. accessibility and UX clarity
-3. performance and installability reliability
-4. net-new features justified by repeated feedback
-
-### Expected cadence
-
-- small, low-risk quality updates
-- targeted bug-fix releases
-- occasional feature additions only when validated by demand
+Planned features:
+- Onboarding flow for new users (at /next-up, automatically redirects to /next-up/board for returning users)
+  - (Includes option to restore data from backup)
+  - Allows for manual library entry (with game cover selection)
+  - Chooses objectives (i.e., explore everything, burn the backlog)
+- Gameplay tweaks
+  - Introduce completion mode, limiting daily and weekly games to incomplete titles
+  - (Adding games costs ♦1000 in completion mode, but completing games gives ♦150)
+  - Add controls for excessive gameplay (e.g., ♦5 per 30 minutes past the 2-hour mark, for instance)
+  - Allow for game mode switching with 1-week cooldown
+- Game covers
+  - Pull and cache game covers off of IGDB, implementing them in the game board and library
+  - Surface daily, weekly, and reserve games as cover-first board cards
+  - Covers can be viewed and changed in Library
+- Play History
+  - Rename Statistics tab
+  - Include playtime, total ♦ earned and spent
+  - Most played title of all time/this month
+  - Add playtime to game library entry
+  - Include average playtimes

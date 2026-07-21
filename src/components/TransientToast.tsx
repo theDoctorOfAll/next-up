@@ -1,15 +1,24 @@
+import { createPortal } from "react-dom";
+
 interface TransientToastProps {
   message: string | null;
   onClose: () => void;
+  position?: "top" | "bottom";
 }
 
-export default function TransientToast({ message, onClose }: TransientToastProps) {
+export default function TransientToast({ message, onClose, position = "bottom" }: TransientToastProps) {
   if (!message) {
     return null;
   }
 
-  return (
-    <div className="fixed inset-x-0 bottom-4 z-[12000] flex justify-center px-4 sm:bottom-6">
+  if (typeof document === "undefined") {
+    return null;
+  }
+
+  const positionClasses = position === "top" ? "top-4 sm:top-6" : "bottom-4 sm:bottom-6";
+
+  return createPortal(
+    <div className={`pointer-events-none fixed inset-x-0 z-[12000] flex justify-center px-4 ${positionClasses}`}>
       <div
         role="status"
         aria-live="polite"
@@ -26,6 +35,7 @@ export default function TransientToast({ message, onClose }: TransientToastProps
           </button>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }
