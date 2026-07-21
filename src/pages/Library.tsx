@@ -69,6 +69,7 @@ export default function Library() {
   });
   const [gameMode, setGameMode] = useState<GameMode>("standard");
   const canEditCompletionInLibrary = gameMode !== "completion";
+  const isCompletionMode = gameMode === "completion";
 
   async function refreshLibrary() {
     const allGames = await getAllGames();
@@ -429,18 +430,30 @@ export default function Library() {
       (acc, pool) => {
         acc[pool] = games
           .filter((game) => game.pool === pool && !game.reserved)
-          .sort((a, b) => a.title.localeCompare(b.title));
+          .sort((a, b) => {
+            if (isCompletionMode && a.completed !== b.completed) {
+              return a.completed ? 1 : -1;
+            }
+
+            return a.title.localeCompare(b.title);
+          });
         return acc;
       },
       { daily: [], weekly: [], none: [] },
     );
-  }, [games]);
+  }, [games, isCompletionMode]);
 
   const reservedGames = useMemo(() => {
     return games
       .filter((game) => game.reserved)
-      .sort((a, b) => a.title.localeCompare(b.title));
-  }, [games]);
+      .sort((a, b) => {
+        if (isCompletionMode && a.completed !== b.completed) {
+          return a.completed ? 1 : -1;
+        }
+
+        return a.title.localeCompare(b.title);
+      });
+  }, [games, isCompletionMode]);
 
   const normalizedEditPlatforms = useMemo(
     () => parsePlatformsInput(editPlatforms),
@@ -470,6 +483,7 @@ export default function Library() {
     const isExpanded = expandedGameId === game.id;
     const cachedCover = game.id ? libraryCoverByGameId[game.id] ?? null : null;
     const isCoverStale = game.id ? staleLibraryCoverByGameId[game.id] ?? false : false;
+    const shouldDesaturateCover = isCompletionMode && game.completed;
 
     return (
       <li key={game.id ?? game.title} className="overflow-hidden rounded-2xl border border-white/10 bg-black/20">
@@ -483,10 +497,10 @@ export default function Library() {
               <img
                 src={cachedCover.imageUrl}
                 alt={`${game.title} cover art`}
-                className="h-full w-full object-cover transition duration-300 group-hover:scale-[1.03]"
+                className={`h-full w-full object-cover transition duration-300 group-hover:scale-[1.03] ${shouldDesaturateCover ? "grayscale saturate-0 opacity-80" : ""}`}
               />
             ) : (
-              <div className="flex h-full w-full items-center justify-center bg-gradient-to-br from-slate-800 via-slate-900 to-black px-4 text-center">
+              <div className={`flex h-full w-full items-center justify-center bg-gradient-to-br from-slate-800 via-slate-900 to-black px-4 text-center ${shouldDesaturateCover ? "grayscale opacity-80" : ""}`}>
                 <span className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-300">{game.title}</span>
               </div>
             )}
