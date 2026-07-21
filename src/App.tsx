@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Routes, Route, Link, Navigate, useLocation } from "react-router-dom";
 import { ArrowLeft, BookOpen, Menu, Play, Plus } from "lucide-react";
-import Board from "./pages/board";
+import Board from "./pages/Board";
 import Library from "./pages/Library";
 import Events from "./pages/Events";
 import Stats from "./pages/Stats";
